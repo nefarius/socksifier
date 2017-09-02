@@ -1,6 +1,6 @@
 # Socksifier
 
-A DLL which hook the `connect()` std call to redirect sockets to SOCKS proxy server.
+A windows DLL which hook the `connect()` std call to redirect sockets to SOCKS4 proxy server.
 
 ## Build
 
