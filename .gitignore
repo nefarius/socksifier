@@ -14,6 +14,9 @@
 *.la
 *.lo
 
+# Except the depedencies
+!lib/*
+
 # Shared objects (inc. Windows DLLs)
 *.dll
 *.so
