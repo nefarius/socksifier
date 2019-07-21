@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "minhook.h"
+#include <detours.h>
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -15,8 +15,8 @@ typedef struct settings {
 } setting_t;
 
 static setting_t settings = {
-    .proxy_address = 0x0100007F,
-    .proxy_port = 0x3804
+    .proxy_address = 0x0100007F, // 127.0.0.1
+    .proxy_port = 0x3804 // 1080
 };
 
 __declspec(dllexport) void set_proxy_address(void * args)
@@ -29,7 +29,7 @@ __declspec(dllexport) void set_proxy_port(void * args)
     settings.proxy_port = *((short *)args);
 }
 
-int (WINAPI * real_connect)(SOCKET s, const struct sockaddr * name, int namelen) = NULL;
+static int (WINAPI * real_connect)(SOCKET s, const struct sockaddr * name, int namelen) = connect;
 
 int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
 {
@@ -67,18 +67,27 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
 
 BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved) 
 {
+    if (DetourIsHelperProcess()) {
+        return TRUE;
+    }
+
     switch (reason) {
         case DLL_PROCESS_ATTACH:
             DisableThreadLibraryCalls(dll_handle);
-            MH_Initialize();
-            MH_CreateHookApiEx(L"ws2_32", "connect", (LPVOID *)&my_connect,
-                                                     (LPVOID *)&real_connect, NULL);
-            MH_EnableHook(MH_ALL_HOOKS);
+            DetourRestoreAfterWith();
+
+            DetourTransactionBegin();
+            DetourUpdateThread(GetCurrentThread());
+            DetourAttach(&(PVOID)real_connect, my_connect);
+            DetourTransactionCommit();
+
             break;
 
         case DLL_PROCESS_DETACH:
-            MH_DisableHook(MH_ALL_HOOKS);
-            MH_Uninitialize();
+            DetourTransactionBegin();
+            DetourUpdateThread(GetCurrentThread());
+            DetourDetach(&(PVOID)real_connect, my_connect);
+            DetourTransactionCommit();
             break;
     }
     return TRUE;

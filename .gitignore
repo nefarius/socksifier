@@ -34,3 +34,10 @@
 # Debug files
 *.dSYM/
 *.su
+/.vs/socksifier/v15
+/src/.vs/socksifier/v15
+/src/Debug
+/src/x64/Debug
+*.user
+/x64/Debug
+/Debug
