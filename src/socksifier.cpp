@@ -110,12 +110,48 @@ static inline BOOL WSARecvSync(
     DWORD flags = 0, transfer = 0, numBytes = 0;
     WSABUF recvBuf;
     OVERLAPPED overlapped = { 0 };
+    // TODO: close handle
     overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
     recvBuf.buf = buffer;
     recvBuf.len = length;
 
     if (WSARecv(s, &recvBuf, 1, &numBytes, &flags, &overlapped, NULL) == SOCKET_ERROR)
+    {
+        if (WSAGetLastError() != WSA_IO_PENDING)
+        {
+
+            // Error occurred
+
+        }
+
+    }
+
+    return WSAGetOverlappedResult(
+        s,
+        &overlapped,
+        &transfer,
+        TRUE,
+        &flags
+    );
+}
+
+static inline BOOL WSASendSync(
+    SOCKET s,
+    PCHAR buffer,
+    ULONG length
+)
+{
+    DWORD flags = 0, transfer = 0, numBytes = 0;
+    WSABUF sendBuf;
+    OVERLAPPED overlapped = { 0 };
+    // TODO: close handle
+    overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+    sendBuf.buf = buffer;
+    sendBuf.len = length;
+
+    if (WSASend(s, &sendBuf, 1, &numBytes, 0, &overlapped, NULL) == SOCKET_ERROR)
     {
         if (WSAGetLastError() != WSA_IO_PENDING)
         {
@@ -230,18 +266,12 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     //
     //auto b = send(s, buffer, 10, 0);
 
-    char setUpSocks5Request[4];
+    char setUpSocks5Request[3];
     setUpSocks5Request[0] = 0x05;
-    setUpSocks5Request[1] = 0x02;
+    setUpSocks5Request[1] = 0x01;
     setUpSocks5Request[2] = 0x00;
-    setUpSocks5Request[3] = 0x02;
 
-    auto b = send(s, setUpSocks5Request, 4, 0);
-
-    if (b == 4)
-    {
-        spdlog::info("Sent SOCKS connection initialization");
-    }
+    auto b = WSASendSync(s, setUpSocks5Request, 3);
 
     char response[2];
 
@@ -249,9 +279,9 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
 
     char setUpBindWithRemoteHost[10];
     setUpBindWithRemoteHost[0] = 0x05;
-    setUpBindWithRemoteHost[0] = 0x01;
-    setUpBindWithRemoteHost[0] = 0x00;
-    setUpBindWithRemoteHost[0] = 0x01;
+    setUpBindWithRemoteHost[1] = 0x01;
+    setUpBindWithRemoteHost[2] = 0x00;
+    setUpBindWithRemoteHost[3] = 0x01;
     setUpBindWithRemoteHost[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
     setUpBindWithRemoteHost[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
     setUpBindWithRemoteHost[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
@@ -259,16 +289,11 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     setUpBindWithRemoteHost[8] = (dest->sin_port >> 0) & 0xFF;
     setUpBindWithRemoteHost[9] = (dest->sin_port >> 8) & 0xFF;
 
-    b = send(s, setUpBindWithRemoteHost, 10, 0);
-
-    if (b == 10)
-    {
-        spdlog::info("Sent SOCKS remote bind request");
-    }
+    b = WSASendSync(s, setUpBindWithRemoteHost, 10);
 
     char response2[10];
 
-    //rvr = WSARecvSync(s, response2, 10);
+    rvr = WSARecvSync(s, response2, 10);
 
     return 0;
 }
