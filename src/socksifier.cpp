@@ -219,6 +219,9 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
 {
     spdlog::debug("my_connect called");
 
+    //
+    // One-time initialization
+    // 
     static std::once_flag flag;
     std::call_once(flag, [&sock = s]()
     {
@@ -227,6 +230,9 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
         DWORD numBytes = 0;
         GUID guid = WSAID_CONNECTEX;
 
+        //
+        // Request ConnectEx function pointer
+        // 
         const auto ret = WSAIoctl(
             sock,
             SIO_GET_EXTENSION_FUNCTION_POINTER,
@@ -295,13 +301,13 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     // Prepare greeting payload
     // 
     char greetProxy[3];
-    greetProxy[0] = 0x05;
-    greetProxy[1] = 0x01;
-    greetProxy[2] = 0x00;
+    greetProxy[0] = 0x05; // Version (always 0x05)
+    greetProxy[1] = 0x01; // Number of authentication methods
+    greetProxy[2] = 0x00; // NO AUTHENTICATION REQUIRED
 
     spdlog::info("Sending greeting to proxy");
 
-    if (WSASendSync(s, greetProxy, 3))
+    if (WSASendSync(s, greetProxy, sizeof(greetProxy)))
     {
         char response[2] = { 0 };
 
@@ -329,10 +335,10 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     // Prepare remote connect request
     // 
     char remoteBind[10];
-    remoteBind[0] = 0x05;
-    remoteBind[1] = 0x01;
-    remoteBind[2] = 0x00;
-    remoteBind[3] = 0x01;
+    remoteBind[0] = 0x05; // Version (always 0x05)
+    remoteBind[1] = 0x01; // Connect command
+    remoteBind[2] = 0x00; // Reserved
+    remoteBind[3] = 0x01; // Type (IP V4 address)
     remoteBind[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
     remoteBind[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
     remoteBind[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
@@ -344,7 +350,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
 
     if (WSASendSync(s, remoteBind, sizeof(remoteBind)))
     {
-        char response[10];
+        char response[10] = { 0 };
 
         if (WSARecvSync(s, response, sizeof(response))
             && response[1] == 0x00 /* success value */)
@@ -365,7 +371,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
         return SOCKET_ERROR;
     }
 
-    return 0;
+    return ERROR_SUCCESS;
 }
 
 
