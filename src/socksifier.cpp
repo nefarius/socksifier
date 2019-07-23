@@ -43,6 +43,19 @@ extern "C" {
 }
 #endif
 
+static inline void LogWSAError()
+{
+    char *error = NULL;
+    FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL,
+        WSAGetLastError(),
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPSTR)&error, 0, NULL);
+    spdlog::error("Winsock error details: {} ({})", error, WSAGetLastError());
+    LocalFree(error);
+}
+
 /**
  * \fn  static inline BOOL BindAndConnectExSync( SOCKET s, const struct sockaddr * name, int namelen )
  *
@@ -77,12 +90,15 @@ static inline BOOL BindAndConnectExSync(
         auto rc = bind(s, (SOCKADDR*)&addr, sizeof(addr));
         if (rc != 0) {
             spdlog::error("bind failed: {}", WSAGetLastError());
-            return 1;
+            LogWSAError();
+            return FALSE;
         }
     }
 
-    // TODO: error handling
-    auto retval = ConnectExPtr(
+    // 
+    // Call ConnectEx with overlapped I/O
+    // 
+    if (!ConnectExPtr(
         s,
         name,
         namelen,
@@ -90,17 +106,42 @@ static inline BOOL BindAndConnectExSync(
         0,
         &numBytes,
         &overlapped
-    );
+    ) && WSAGetLastError() != WSA_IO_PENDING)
+    {
+        spdlog::error("ConnectEx failed: {}", WSAGetLastError());
+        CloseHandle(overlapped.hEvent);
+        return FALSE;
+    }
 
-    return WSAGetOverlappedResult(
+    //
+    // Wait for result
+    // 
+    const auto ret = WSAGetOverlappedResult(
         s,
         &overlapped,
         &transfer,
         TRUE,
         &flags
     );
+
+    CloseHandle(overlapped.hEvent);
+    return ret;
 }
 
+/**
+ * \fn  static inline BOOL WSARecvSync( SOCKET s, PCHAR buffer, ULONG length )
+ *
+ * \brief   recv() in a blocking fashion.
+ *
+ * \author  Benjamin Höglinger-Stelzer
+ * \date    23.07.2019
+ *
+ * \param   s       A SOCKET to process.
+ * \param   buffer  The buffer.
+ * \param   length  The length.
+ *
+ * \returns True if it succeeds, false if it fails.
+ */
 static inline BOOL WSARecvSync(
     SOCKET s,
     PCHAR buffer,
@@ -110,7 +151,6 @@ static inline BOOL WSARecvSync(
     DWORD flags = 0, transfer = 0, numBytes = 0;
     WSABUF recvBuf;
     OVERLAPPED overlapped = { 0 };
-    // TODO: close handle
     overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
     recvBuf.buf = buffer;
@@ -120,20 +160,22 @@ static inline BOOL WSARecvSync(
     {
         if (WSAGetLastError() != WSA_IO_PENDING)
         {
-
-            // Error occurred
-
+            spdlog::error("WSARecv failed: {}", WSAGetLastError());
+            CloseHandle(overlapped.hEvent);
+            return FALSE;
         }
-
     }
 
-    return WSAGetOverlappedResult(
+    const auto ret = WSAGetOverlappedResult(
         s,
         &overlapped,
         &transfer,
         TRUE,
         &flags
     );
+
+    CloseHandle(overlapped.hEvent);
+    return ret;
 }
 
 static inline BOOL WSASendSync(
@@ -145,7 +187,6 @@ static inline BOOL WSASendSync(
     DWORD flags = 0, transfer = 0, numBytes = 0;
     WSABUF sendBuf;
     OVERLAPPED overlapped = { 0 };
-    // TODO: close handle
     overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
     sendBuf.buf = buffer;
@@ -155,20 +196,23 @@ static inline BOOL WSASendSync(
     {
         if (WSAGetLastError() != WSA_IO_PENDING)
         {
-
-            // Error occurred
-
+            spdlog::error("WSASend failed: {}", WSAGetLastError());
+            CloseHandle(overlapped.hEvent);
+            return FALSE;
         }
 
     }
 
-    return WSAGetOverlappedResult(
+    const auto ret = WSAGetOverlappedResult(
         s,
         &overlapped,
         &transfer,
         TRUE,
         &flags
     );
+
+    CloseHandle(overlapped.hEvent);
+    return ret;
 }
 
 int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
@@ -210,12 +254,16 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     char addr[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
     const auto dest_port = ntohs(dest->sin_port);
-    spdlog::info("Original connect destination: {}:{}", addr, dest_port);
 
-    if (dest_port != 443)
+    //
+    // These destinations we don't usually wanna proxy
+    // 
+    if (ConnectExPtr == NULL || !strcmp(addr, "127.0.0.1") || !strcmp(addr, "0.0.0.0"))
     {
         return real_connect(s, name, namelen);
     }
+
+    spdlog::info("Original connect destination: {}:{}", addr, dest_port);
 
     struct sockaddr_in proxy;
     proxy.sin_addr.s_addr = settings.proxy_address;
@@ -225,7 +273,9 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     inet_ntop(AF_INET, &(proxy.sin_addr), addr, INET_ADDRSTRLEN);
     spdlog::info("Connecting to SOCKS proxy: {}:{}", addr, ntohs(proxy.sin_port));
 
-
+    //
+    // This handles non-blocking socket connections via extended Winsock API
+    // 
     if (BindAndConnectExSync(
         s,
         reinterpret_cast<SOCKADDR *>(&proxy),
@@ -234,35 +284,86 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     {
         spdlog::info("Proxy connection established");
     }
+    else
+    {
+        spdlog::error("Proxy connection failed");
+        LogWSAError();
+        return SOCKET_ERROR;
+    }
 
-    char setUpSocks5Request[3];
-    setUpSocks5Request[0] = 0x05;
-    setUpSocks5Request[1] = 0x01;
-    setUpSocks5Request[2] = 0x00;
+    //
+    // Prepare greeting payload
+    // 
+    char greetProxy[3];
+    greetProxy[0] = 0x05;
+    greetProxy[1] = 0x01;
+    greetProxy[2] = 0x00;
 
-    auto b = WSASendSync(s, setUpSocks5Request, 3);
+    spdlog::info("Sending greeting to proxy");
 
-    char response[2];
+    if (WSASendSync(s, greetProxy, 3))
+    {
+        char response[2] = { 0 };
 
-    auto rvr = WSARecvSync(s, response, 2);
+        if (WSARecvSync(s, response, sizeof(response))
+            && response[0] == 0x05 /* expected version */
+            && response[1] == 0x00 /* success value */)
+        {
+            spdlog::info("Proxy accepted greeting without authentication");
+        }
+        else
+        {
+            spdlog::error("Proxy greeting failed");
+            LogWSAError();
+            return SOCKET_ERROR;
+        }
+    }
+    else
+    {
+        spdlog::error("Failed to greet SOCKS proxy server");
+        LogWSAError();
+        return SOCKET_ERROR;
+    }
 
-    char setUpBindWithRemoteHost[10];
-    setUpBindWithRemoteHost[0] = 0x05;
-    setUpBindWithRemoteHost[1] = 0x01;
-    setUpBindWithRemoteHost[2] = 0x00;
-    setUpBindWithRemoteHost[3] = 0x01;
-    setUpBindWithRemoteHost[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
-    setUpBindWithRemoteHost[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
-    setUpBindWithRemoteHost[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
-    setUpBindWithRemoteHost[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
-    setUpBindWithRemoteHost[8] = (dest->sin_port >> 0) & 0xFF;
-    setUpBindWithRemoteHost[9] = (dest->sin_port >> 8) & 0xFF;
+    //
+    // Prepare remote connect request
+    // 
+    char remoteBind[10];
+    remoteBind[0] = 0x05;
+    remoteBind[1] = 0x01;
+    remoteBind[2] = 0x00;
+    remoteBind[3] = 0x01;
+    remoteBind[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
+    remoteBind[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
+    remoteBind[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
+    remoteBind[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
+    remoteBind[8] = (dest->sin_port >> 0) & 0xFF;
+    remoteBind[9] = (dest->sin_port >> 8) & 0xFF;
 
-    b = WSASendSync(s, setUpBindWithRemoteHost, 10);
+    spdlog::info("Sending connect request to proxy");
 
-    char response2[10];
+    if (WSASendSync(s, remoteBind, sizeof(remoteBind)))
+    {
+        char response[10];
 
-    rvr = WSARecvSync(s, response2, 10);
+        if (WSARecvSync(s, response, sizeof(response))
+            && response[1] == 0x00 /* success value */)
+        {
+            spdlog::info("Remote connection established");
+        }
+        else
+        {
+            spdlog::error("Consuming proxy response failed");
+            LogWSAError();
+            return SOCKET_ERROR;
+        }
+    }
+    else
+    {
+        spdlog::error("Failed to instruct proxy to remote connect");
+        LogWSAError();
+        return SOCKET_ERROR;
+    }
 
     return 0;
 }
@@ -293,7 +394,7 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 #endif
 
             spdlog::set_default_logger(logger);
-        }
+    }
 
         DisableThreadLibraryCalls(dll_handle);
         DetourRestoreAfterWith();
@@ -311,6 +412,6 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
         DetourDetach(&(PVOID)real_connect, my_connect);
         DetourTransactionCommit();
         break;
-    }
+}
     return TRUE;
 }
