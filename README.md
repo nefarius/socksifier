@@ -4,6 +4,10 @@ A windows DLL which hook the `connect()` std call to redirect sockets to SOCKS5 
 
 ## Build
 
+[Follow the Vcpkg Quick Start](https://github.com/Microsoft/vcpkg#quick-start) and install the following packages:
+
+- `.\vcpkg install spdlog:x86-windows-static spdlog:x64-windows-static detours:x86-windows-static detours:x64-windows-static`
+
 This project use the NMAKE version of makefile. To build the DLL, simply open your `Developper Command Prompt for Visual Studio` and use:
  - `nmake` to build
  - `nmake clean` to clean
