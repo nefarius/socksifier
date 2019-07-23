@@ -37,15 +37,103 @@ extern "C" {
 
     static int (WINAPI * real_connect)(SOCKET s, const struct sockaddr * name, int namelen) = connect;
 
-    LPFN_CONNECTEX LpfnConnectex = NULL;
+    LPFN_CONNECTEX ConnectExPtr = NULL;
 
 #ifdef __cplusplus
 }
 #endif
 
+/**
+ * \fn  static inline BOOL BindAndConnectExSync( SOCKET s, const struct sockaddr * name, int namelen )
+ *
+ * \brief   Bind and connect a non-blocking socket synchronously.
+ *
+ * \author  Benjamin Höglinger-Stelzer
+ * \date    23.07.2019
+ *
+ * \param   s       A SOCKET to process.
+ * \param   name    The const struct sockaddr *.
+ * \param   namelen The sizeof(const struct sockaddr).
+ *
+ * \returns True if it succeeds, false if it fails.
+ */
+static inline BOOL BindAndConnectExSync(
+    SOCKET s,
+    const struct sockaddr * name,
+    int namelen
+)
+{
+    DWORD numBytes = 0, transfer = 0, flags = 0;
+    OVERLAPPED overlapped = { 0 };
+    overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+    /* ConnectEx requires the socket to be initially bound. */
+    {
+        struct sockaddr_in addr;
+        ZeroMemory(&addr, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = 0;
+        auto rc = bind(s, (SOCKADDR*)&addr, sizeof(addr));
+        if (rc != 0) {
+            spdlog::error("bind failed: {}", WSAGetLastError());
+            return 1;
+        }
+    }
+
+    // TODO: error handling
+    auto retval = ConnectExPtr(
+        s,
+        name,
+        namelen,
+        NULL,
+        0,
+        &numBytes,
+        &overlapped
+    );
+
+    return WSAGetOverlappedResult(
+        s,
+        &overlapped,
+        &transfer,
+        TRUE,
+        &flags
+    );
+}
+
 int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
 {
     spdlog::debug("my_connect called");
+
+    static std::once_flag flag;
+    std::call_once(flag, [&sock = s]()
+    {
+        spdlog::info("Requesting pointer to ConnectEx()");
+
+        DWORD numBytes = 0;
+        GUID guid = WSAID_CONNECTEX;
+
+        const auto ret = WSAIoctl(
+            sock,
+            SIO_GET_EXTENSION_FUNCTION_POINTER,
+            (void*)&guid,
+            sizeof(guid),
+            (void*)&ConnectExPtr,
+            sizeof(ConnectExPtr),
+            &numBytes,
+            NULL,
+            NULL
+        );
+
+        if (!ret)
+        {
+            spdlog::info("ConnectEx() pointer acquired");
+        }
+        else
+        {
+            spdlog::error("Failed to retrieve ConnectEx() pointer, error: {}", WSAGetLastError());
+        }
+    });
 
     const struct sockaddr_in * dest = (const struct sockaddr_in *)name;
 
@@ -67,67 +155,13 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     inet_ntop(AF_INET, &(proxy.sin_addr), addr, INET_ADDRSTRLEN);
     spdlog::info("Connecting to SOCKS proxy: {}:{}", addr, ntohs(proxy.sin_port));
 
-    DWORD numBytes = 0;
-    GUID guid = WSAID_CONNECTEX;
 
-    LPFN_CONNECTEX ConnectExPtr = NULL;
-    int success = WSAIoctl(
-        s,
-        SIO_GET_EXTENSION_FUNCTION_POINTER,
-        (void*)&guid,
-        sizeof(guid),
-        (void*)&ConnectExPtr,
-        sizeof(ConnectExPtr),
-        &numBytes,
-        NULL,
-        NULL
-    );
-    // Check WSAGetLastError()!
-
-    /* ... */
-
-
-    /* ConnectEx requires the socket to be initially bound. */
-    {
-        struct sockaddr_in addr;
-        ZeroMemory(&addr, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = INADDR_ANY;
-        addr.sin_port = 0;
-        auto rc = bind(s, (SOCKADDR*)&addr, sizeof(addr));
-        if (rc != 0) {
-            spdlog::error("bind failed: {}", WSAGetLastError());
-            return 1;
-        }
-    }
-
-    OVERLAPPED overlapped = { 0 };
-    overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-
-    auto m = WSAGetLastError();
-
-    // Assuming the pointer isn't NULL, you can call it with the correct parameters.
-    auto retval = ConnectExPtr(
+    auto retv = BindAndConnectExSync(
         s,
         reinterpret_cast<SOCKADDR *>(&proxy),
-        sizeof(proxy),
-        NULL,
-        0,
-        &numBytes,
-        &overlapped
+        sizeof(proxy)
     );
 
-
-
-    DWORD transfer = 0, flags = 0;
-
-    auto rv = WSAGetOverlappedResult(
-        s,
-        &overlapped,
-        &transfer,
-        TRUE,
-        &flags
-    );
 
     //const int ret = real_connect(s, reinterpret_cast<SOCKADDR *>(&proxy), sizeof(proxy));
     //if (ret) {
@@ -150,7 +184,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     buffer[1] = 0x01; // CONNECT X'01'
     buffer[2] = 0x00; // RESERVED
     buffer[3] = 0x01; //IP V4 address: X'01'
-    
+
     buffer[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
     buffer[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
     buffer[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
@@ -160,15 +194,16 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
 
     auto b = send(s, buffer, 10, 0);
 
+    DWORD flags = 0, transfer = 0, numBytes = 0;
     WSABUF recvBuf;
-    OVERLAPPED recvOverlapped = { 0 };
-    recvOverlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    OVERLAPPED overlapped = { 0 };
+    overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
     ZeroMemory(buffer, 256);
     recvBuf.buf = buffer;
     recvBuf.len = 256;
 
-    if (WSARecv(s, &recvBuf, 1, &numBytes, &flags, &recvOverlapped, NULL) == SOCKET_ERROR)
+    if (WSARecv(s, &recvBuf, 1, &numBytes, &flags, &overlapped, NULL) == SOCKET_ERROR)
     {
         if (WSAGetLastError() != WSA_IO_PENDING)
         {
@@ -179,7 +214,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
 
     }
 
-    rv = WSAGetOverlappedResult(
+    auto rv = WSAGetOverlappedResult(
         s,
         &overlapped,
         &transfer,
