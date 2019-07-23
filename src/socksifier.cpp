@@ -101,6 +101,40 @@ static inline BOOL BindAndConnectExSync(
     );
 }
 
+static inline BOOL WSARecvSync(
+    SOCKET s,
+    PCHAR buffer,
+    ULONG length
+)
+{
+    DWORD flags = 0, transfer = 0, numBytes = 0;
+    WSABUF recvBuf;
+    OVERLAPPED overlapped = { 0 };
+    overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+    recvBuf.buf = buffer;
+    recvBuf.len = length;
+
+    if (WSARecv(s, &recvBuf, 1, &numBytes, &flags, &overlapped, NULL) == SOCKET_ERROR)
+    {
+        if (WSAGetLastError() != WSA_IO_PENDING)
+        {
+
+            // Error occurred
+
+        }
+
+    }
+
+    return WSAGetOverlappedResult(
+        s,
+        &overlapped,
+        &transfer,
+        TRUE,
+        &flags
+    );
+}
+
 int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
 {
     spdlog::debug("my_connect called");
@@ -156,12 +190,14 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     spdlog::info("Connecting to SOCKS proxy: {}:{}", addr, ntohs(proxy.sin_port));
 
 
-    auto retv = BindAndConnectExSync(
+    if (BindAndConnectExSync(
         s,
         reinterpret_cast<SOCKADDR *>(&proxy),
         sizeof(proxy)
-    );
-
+    ))
+    {
+        spdlog::info("Proxy connection established");
+    }
 
     //const int ret = real_connect(s, reinterpret_cast<SOCKADDR *>(&proxy), sizeof(proxy));
     //if (ret) {
@@ -178,53 +214,61 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     //    return ret;
     //}
 
-    char buffer[256];
-    ZeroMemory(buffer, 256);
-    buffer[0] = 0x05; // protocol version: X'05'
-    buffer[1] = 0x01; // CONNECT X'01'
-    buffer[2] = 0x00; // RESERVED
-    buffer[3] = 0x01; //IP V4 address: X'01'
+    //char buffer[256];
+    //ZeroMemory(buffer, 256);
+    //buffer[0] = 0x05; // protocol version: X'05'
+    //buffer[1] = 0x01; // CONNECT X'01'
+    //buffer[2] = 0x00; // RESERVED
+    //buffer[3] = 0x01; //IP V4 address: X'01'
+    //
+    //buffer[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
+    //buffer[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
+    //buffer[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
+    //buffer[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
+    //buffer[8] = (dest->sin_port >> 0) & 0xFF;
+    //buffer[9] = (dest->sin_port >> 8) & 0xFF;
+    //
+    //auto b = send(s, buffer, 10, 0);
 
-    buffer[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
-    buffer[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
-    buffer[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
-    buffer[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
-    buffer[8] = (dest->sin_port >> 0) & 0xFF;
-    buffer[9] = (dest->sin_port >> 8) & 0xFF;
+    char setUpSocks5Request[4];
+    setUpSocks5Request[0] = 0x05;
+    setUpSocks5Request[1] = 0x02;
+    setUpSocks5Request[2] = 0x00;
+    setUpSocks5Request[3] = 0x02;
 
-    auto b = send(s, buffer, 10, 0);
+    auto b = send(s, setUpSocks5Request, 4, 0);
 
-    DWORD flags = 0, transfer = 0, numBytes = 0;
-    WSABUF recvBuf;
-    OVERLAPPED overlapped = { 0 };
-    overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-
-    ZeroMemory(buffer, 256);
-    recvBuf.buf = buffer;
-    recvBuf.len = 256;
-
-    if (WSARecv(s, &recvBuf, 1, &numBytes, &flags, &overlapped, NULL) == SOCKET_ERROR)
+    if (b == 4)
     {
-        if (WSAGetLastError() != WSA_IO_PENDING)
-        {
-
-            // Error occurred
-
-        }
-
+        spdlog::info("Sent SOCKS connection initialization");
     }
 
-    auto rv = WSAGetOverlappedResult(
-        s,
-        &overlapped,
-        &transfer,
-        TRUE,
-        &flags
-    );
+    char response[2];
 
-    auto v = WSAGetLastError();
+    auto rvr = WSARecvSync(s, response, 2);
 
+    char setUpBindWithRemoteHost[10];
+    setUpBindWithRemoteHost[0] = 0x05;
+    setUpBindWithRemoteHost[0] = 0x01;
+    setUpBindWithRemoteHost[0] = 0x00;
+    setUpBindWithRemoteHost[0] = 0x01;
+    setUpBindWithRemoteHost[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
+    setUpBindWithRemoteHost[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
+    setUpBindWithRemoteHost[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
+    setUpBindWithRemoteHost[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
+    setUpBindWithRemoteHost[8] = (dest->sin_port >> 0) & 0xFF;
+    setUpBindWithRemoteHost[9] = (dest->sin_port >> 8) & 0xFF;
 
+    b = send(s, setUpBindWithRemoteHost, 10, 0);
+
+    if (b == 10)
+    {
+        spdlog::info("Sent SOCKS remote bind request");
+    }
+
+    char response2[10];
+
+    //rvr = WSARecvSync(s, response2, 10);
 
     return 0;
 }
