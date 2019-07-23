@@ -235,37 +235,6 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
         spdlog::info("Proxy connection established");
     }
 
-    //const int ret = real_connect(s, reinterpret_cast<SOCKADDR *>(&proxy), sizeof(proxy));
-    //if (ret) {
-    //    char *error = NULL;
-    //    FormatMessageA(
-    //        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-    //        NULL,
-    //        WSAGetLastError(),
-    //        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-    //        (LPSTR)&error, 0, NULL);
-    //    spdlog::error("Proxy server connection failed: {} ({})", error, WSAGetLastError());
-    //    LocalFree(error);
-    //
-    //    return ret;
-    //}
-
-    //char buffer[256];
-    //ZeroMemory(buffer, 256);
-    //buffer[0] = 0x05; // protocol version: X'05'
-    //buffer[1] = 0x01; // CONNECT X'01'
-    //buffer[2] = 0x00; // RESERVED
-    //buffer[3] = 0x01; //IP V4 address: X'01'
-    //
-    //buffer[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
-    //buffer[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
-    //buffer[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
-    //buffer[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
-    //buffer[8] = (dest->sin_port >> 0) & 0xFF;
-    //buffer[9] = (dest->sin_port >> 8) & 0xFF;
-    //
-    //auto b = send(s, buffer, 10, 0);
-
     char setUpSocks5Request[3];
     setUpSocks5Request[0] = 0x05;
     setUpSocks5Request[1] = 0x01;
