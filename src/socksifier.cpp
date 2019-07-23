@@ -2,8 +2,6 @@
 #include <ws2tcpip.h>
 #include <MSWSock.h>
 #include <windows.h>
-#include <stdio.h>
-#include <string.h>
 
 #include <detours.h>
 
@@ -12,7 +10,6 @@
 
 #pragma comment(lib, "Ws2_32.lib")
 
-#define USER_ID "socksifier"
 
 typedef struct settings {
     int proxy_address;
@@ -43,6 +40,14 @@ extern "C" {
 }
 #endif
 
+/**
+ * \fn  static inline void LogWSAError()
+ *
+ * \brief   Send friendly name of WSA error message to default log.
+ *
+ * \author  Benjamin Höglinger-Stelzer
+ * \date    23.07.2019
+ */
 static inline void LogWSAError()
 {
     char *error = NULL;
@@ -85,8 +90,8 @@ static inline BOOL BindAndConnectExSync(
         struct sockaddr_in addr;
         ZeroMemory(&addr, sizeof(addr));
         addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = INADDR_ANY;
-        addr.sin_port = 0;
+        addr.sin_addr.s_addr = INADDR_ANY; // Any
+        addr.sin_port = 0; // Any
         auto rc = bind(s, (SOCKADDR*)&addr, sizeof(addr));
         if (rc != 0) {
             spdlog::error("bind failed: {}", WSAGetLastError());
@@ -178,6 +183,20 @@ static inline BOOL WSARecvSync(
     return ret;
 }
 
+/**
+ * \fn  static inline BOOL WSASendSync( SOCKET s, PCHAR buffer, ULONG length )
+ *
+ * \brief   send() in a blocking fashion.
+ *
+ * \author  Benjamin Höglinger-Stelzer
+ * \date    23.07.2019
+ *
+ * \param   s       A SOCKET to process.
+ * \param   buffer  The buffer.
+ * \param   length  The length.
+ *
+ * \returns True if it succeeds, false if it fails.
+ */
 static inline BOOL WSASendSync(
     SOCKET s,
     PCHAR buffer,
@@ -215,6 +234,20 @@ static inline BOOL WSASendSync(
     return ret;
 }
 
+/**
+ * \fn  int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
+ *
+ * \brief   Detoured connect function.
+ *
+ * \author  Benjamin Höglinger-Stelzer
+ * \date    23.07.2019
+ *
+ * \param   s       A SOCKET to process.
+ * \param   name    The name.
+ * \param   namelen The namelen.
+ *
+ * \returns A WINAPI.
+ */
 int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
 {
     spdlog::debug("my_connect called");
@@ -252,6 +285,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
         else
         {
             spdlog::error("Failed to retrieve ConnectEx() pointer, error: {}", WSAGetLastError());
+            ConnectExPtr = NULL;
         }
     });
 
