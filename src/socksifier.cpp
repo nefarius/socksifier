@@ -100,10 +100,10 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
             return 1;
         }
     }
-         
+
     OVERLAPPED overlapped = { 0 };
     overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-       
+
     auto m = WSAGetLastError();
 
     // Assuming the pointer isn't NULL, you can call it with the correct parameters.
@@ -113,11 +113,11 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
         sizeof(proxy),
         NULL,
         0,
-        &numBytes, 
+        &numBytes,
         &overlapped
     );
 
-    auto v = WSAGetLastError();
+
 
     DWORD transfer = 0, flags = 0;
 
@@ -145,21 +145,51 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     //}
 
     char buffer[256];
-    buffer[0] = 0x04;
-    buffer[1] = 0x01;
-    buffer[2] = (dest->sin_port >> 0) & 0xFF;
-    buffer[3] = (dest->sin_port >> 8) & 0xFF;
+    ZeroMemory(buffer, 256);
+    buffer[0] = 0x05; // protocol version: X'05'
+    buffer[1] = 0x01; // CONNECT X'01'
+    buffer[2] = 0x00; // RESERVED
+    buffer[3] = 0x01; //IP V4 address: X'01'
+    
     buffer[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
     buffer[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
     buffer[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
     buffer[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
-    sprintf_s(&buffer[8], 256 - 8, "%s", USER_ID);
-    send(s, buffer, 8 + strlen(USER_ID), 0);
+    buffer[8] = (dest->sin_port >> 0) & 0xFF;
+    buffer[9] = (dest->sin_port >> 8) & 0xFF;
 
-    recv(s, buffer, 8, 0);
-    if (buffer[1] != 0x5A) {
-        return SOCKET_ERROR;
+    auto b = send(s, buffer, 10, 0);
+
+    WSABUF recvBuf;
+    OVERLAPPED recvOverlapped = { 0 };
+    recvOverlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+    ZeroMemory(buffer, 256);
+    recvBuf.buf = buffer;
+    recvBuf.len = 256;
+
+    if (WSARecv(s, &recvBuf, 1, &numBytes, &flags, &recvOverlapped, NULL) == SOCKET_ERROR)
+    {
+        if (WSAGetLastError() != WSA_IO_PENDING)
+        {
+
+            // Error occurred
+
+        }
+
     }
+
+    rv = WSAGetOverlappedResult(
+        s,
+        &overlapped,
+        &transfer,
+        TRUE,
+        &flags
+    );
+
+    auto v = WSAGetLastError();
+
+
 
     return 0;
 }
