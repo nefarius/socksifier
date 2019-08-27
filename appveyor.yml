@@ -18,3 +18,5 @@ build:
   project: socksifier.sln
 artifacts:
 - path: 'bin**\*.dll'
+cache:
+- c:\tools\vcpkg\installed\
