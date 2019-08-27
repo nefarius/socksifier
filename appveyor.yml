@@ -1,0 +1,6 @@
+version: 1.0.{build}
+image: Visual Studio 2019
+configuration: Release
+  project: socksifier.sln
+artifacts:
+- path: 'bin**\*.dll'
