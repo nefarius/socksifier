@@ -1,5 +1,15 @@
 version: 1.0.{build}
 image: Visual Studio 2017
+install:
+- cmd: |
+    cd "C:\Tools\vcpkg"
+    git pull > NUL
+    .\bootstrap-vcpkg.bat > NUL
+    cd %appveyor_build_folder%
+before_build:
+- cmd: vcpkg integrate install
+- cmd: vcpkg update
+- cmd: vcpkg install spdlog:x86-windows-static spdlog:x64-windows-static detours:x86-windows-static detours:x64-windows-static
 configuration: Release
 build:
   project: socksifier.sln
