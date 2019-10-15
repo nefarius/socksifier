@@ -2,6 +2,8 @@
 
 A windows DLL which hook the `connect()` std call to redirect sockets to SOCKS5 proxy server.
 
+[![Build status](https://ci.appveyor.com/api/projects/status/bwesvx70s524t30w/branch/master?svg=true)](https://ci.appveyor.com/project/nefarius/socksifier/branch/master)
+
 ## Build
 
 [Follow the Vcpkg Quick Start](https://github.com/Microsoft/vcpkg#quick-start) and install the following packages:
