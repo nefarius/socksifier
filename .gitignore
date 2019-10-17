@@ -41,3 +41,6 @@
 *.user
 /x64/Debug
 /Debug
+/.vs/socksifier/v16
+/bin/x64
+/src/x64/Release
