@@ -3,7 +3,7 @@
 #include <MSWSock.h>
 #include <windows.h>
 
-#include <detours.h>
+#include <detours/detours.h>
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
@@ -17,6 +17,8 @@ typedef struct settings {
 } setting_t;
 
 static setting_t settings;
+
+#pragma region TODO: redesign exposed settings
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +41,8 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+
+#pragma endregion
 
 /**
  * \fn  static inline void LogWSAError()
