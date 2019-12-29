@@ -8,7 +8,7 @@ install:
     cd %appveyor_build_folder%
 before_build:
 - cmd: vcpkg integrate install
-- cmd: vcpkg upgrade
+- cmd: vcpkg upgrade --no-dry-run
 - cmd: vcpkg install spdlog:x86-windows-static spdlog:x64-windows-static detours:x86-windows-static detours:x64-windows-static
 configuration: Release
 platform:
