@@ -18,11 +18,12 @@ typedef struct settings {
 
 static setting_t settings;
 
-#pragma region TODO: redesign exposed settings
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#pragma region TODO: redesign exposed settings
 
     __declspec(dllexport) void set_proxy_address(void * args)
     {
@@ -34,6 +35,8 @@ extern "C" {
         settings.proxy_port = *((short *)args);
     }
 
+#pragma endregion 
+
     static int (WINAPI * real_connect)(SOCKET s, const struct sockaddr * name, int namelen) = connect;
 
     LPFN_CONNECTEX ConnectExPtr = NULL;
@@ -42,7 +45,6 @@ extern "C" {
 }
 #endif
 
-#pragma endregion
 
 /**
  * \fn  static inline void LogWSAError()
