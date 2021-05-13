@@ -12,8 +12,8 @@
 
 
 typedef struct settings {
-    int proxy_address;
-    short proxy_port;
+    INT proxy_address;
+    USHORT  proxy_port;
 } setting_t;
 
 static setting_t settings;
@@ -22,20 +22,6 @@ static setting_t settings;
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#pragma region TODO: redesign exposed settings
-
-    __declspec(dllexport) void set_proxy_address(void * args)
-    {
-        settings.proxy_address = *((int *)args);
-    }
-
-    __declspec(dllexport) void set_proxy_port(void * args)
-    {
-        settings.proxy_port = *((short *)args);
-    }
-
-#pragma endregion 
 
     static int (WINAPI * real_connect)(SOCKET s, const struct sockaddr * name, int namelen) = connect;
 
@@ -420,27 +406,45 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
     if (DetourIsHelperProcess()) {
         return TRUE;
     }
-
+	
     switch (reason) {
     case DLL_PROCESS_ATTACH:
-        settings.proxy_address = 0x0100007F; // 127.0.0.1
-        settings.proxy_port = 0x3804; // 1080
 
-        {
-            auto logger = spdlog::basic_logger_mt(
-                "socksifier",
-                "socksifier.log"
-            );
+	    {
+			CHAR logfileVar[MAX_PATH];
 
-#if _DEBUG
-            spdlog::set_level(spdlog::level::debug);
-            logger->flush_on(spdlog::level::debug);
-#else
-            logger->flush_on(spdlog::level::info);
-#endif
+    		//
+    		// Optional logfile path enables logging to file
+    		// 
+			if (GetEnvironmentVariableA("SOCKSIFIER_LOGFILE", logfileVar, ARRAYSIZE(logfileVar)))
+			{
+                auto logger = spdlog::basic_logger_mt(
+                    "socksifier",
+                    logfileVar
+                );
 
-            spdlog::set_default_logger(logger);
-    }
+                spdlog::set_level(spdlog::level::trace);
+                logger->flush_on(spdlog::level::info);
+
+                set_default_logger(logger);
+			}
+
+    		//
+    		// Default values
+    		// 
+            CHAR addressVar[MAX_PATH] = "127.0.0.1";
+    		CHAR portVar[MAX_PATH] = "1080";
+
+			//
+			// Mandatory variables
+			// 
+			if (GetEnvironmentVariableA("SOCKSIFIER_ADDRESS", addressVar, ARRAYSIZE(addressVar)))
+				inet_pton(AF_INET, addressVar, &settings.proxy_address);
+			if (GetEnvironmentVariableA("SOCKSIFIER_PORT", portVar, ARRAYSIZE(portVar)))
+				settings.proxy_port = _byteswap_ushort(static_cast<USHORT>(strtol(portVar, nullptr, 10)));
+            
+            spdlog::info("Using SOCKS proxy: {}:{}", addressVar, portVar);
+	    }
 
         DisableThreadLibraryCalls(dll_handle);
         DetourRestoreAfterWith();

@@ -1,6 +1,6 @@
 # Socksifier
 
-A windows DLL which hook the `connect()` std call to redirect sockets to SOCKS5 proxy server.
+A Windows DLL which hooks the `connect()` API to redirect sockets to a SOCKS5 proxy server.
 
 [![Build status](https://ci.appveyor.com/api/projects/status/bwesvx70s524t30w/branch/master?svg=true)](https://ci.appveyor.com/project/nefarius/socksifier/branch/master)
 
@@ -10,29 +10,15 @@ A windows DLL which hook the `connect()` std call to redirect sockets to SOCKS5 
 
 - `.\vcpkg install spdlog:x86-windows-static spdlog:x64-windows-static detours:x86-windows-static detours:x64-windows-static`
 
-This project use the NMAKE version of makefile. To build the DLL, simply open your `Developper Command Prompt for Visual Studio` and use:
- - `nmake` to build
- - `nmake clean` to clean
-
 ## Getting started
 
-To enable the redirection you just have to inject the DLL in your target process.
+To enable the redirection you just have to inject the DLL into your target process.
 
-By default, socksfier redirect sockets to `localhost:1080` but these values can be set by using the exported functions `set_proxy_address()` and `set_proxy_port()`.
+Set up the following environment variables to configure the DLL. Default values are used if omitted.
 
-To call these functions and use your own configuration you need a DLL injector which allow you to calls these functions. For example with [this one](https://github.com/numaru/injector), I can change the default port to `9050`.
-
-```python
-proxy_addr = socket.inet_aton("127.0.0.1")
-proxy_port = struct.pack("!H", 9050)
-
-# ...
-
-dll_addr = injector.inject_dll(path_dll)
-injector.call_from_injected(path_dll, dll_addr, "set_proxy_address", proxy_addr)
-injector.call_from_injected(path_dll, dll_addr, "set_proxy_port", proxy_port)
-injector.unload()
-```
+- `SOCKSIFIER_ADDRESS` - IP address of the SOCKS5 proxy to connect to (defaults to `127.0.0.1`)
+- `SOCKSIFIER_PORT` - Port of the SOCKS5 proxy to connect to (defaults to `1080`)
+- `SOCKSIFIER_LOGFILE` - Absolute path or file name to write the log to (useful for diagnostics)
 
 ## Sources
 
