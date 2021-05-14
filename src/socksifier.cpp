@@ -438,10 +438,11 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 			//
 			// Mandatory variables
 			// 
-			if (GetEnvironmentVariableA("SOCKSIFIER_ADDRESS", addressVar, ARRAYSIZE(addressVar)))
-				inet_pton(AF_INET, addressVar, &settings.proxy_address);
-			if (GetEnvironmentVariableA("SOCKSIFIER_PORT", portVar, ARRAYSIZE(portVar)))
-				settings.proxy_port = _byteswap_ushort(static_cast<USHORT>(strtol(portVar, nullptr, 10)));
+			GetEnvironmentVariableA("SOCKSIFIER_ADDRESS", addressVar, ARRAYSIZE(addressVar));
+			GetEnvironmentVariableA("SOCKSIFIER_PORT", portVar, ARRAYSIZE(portVar));
+
+			inet_pton(AF_INET, addressVar, &settings.proxy_address);
+			settings.proxy_port = _byteswap_ushort(static_cast<USHORT>(strtol(portVar, nullptr, 10)));
             
             spdlog::info("Using SOCKS proxy: {}:{}", addressVar, portVar);
 	    }
