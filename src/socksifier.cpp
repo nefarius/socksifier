@@ -438,36 +438,36 @@ LPWSTR GetObjectName(HANDLE hObject)
 
 LPWSTR GetObjectTypeName(HANDLE hObject)
 {
-    LPWSTR lpwsReturn = nullptr;
-    const auto pNTQO = reinterpret_cast<tNtQueryObject>(GetProcAddress(
-	    GetModuleHandle("NTDLL.DLL"),
-	    "NtQueryObject"
-    ));
+	LPWSTR lpwsReturn = nullptr;
+	const auto pNTQO = reinterpret_cast<tNtQueryObject>(GetProcAddress(
+		GetModuleHandle("NTDLL.DLL"),
+		"NtQueryObject"
+	));
 
-    if (pNTQO != nullptr)
-    {
-        DWORD dwSize = sizeof(PUBLIC_OBJECT_TYPE_INFORMATION);
-        PPUBLIC_OBJECT_TYPE_INFORMATION pObjectInfo = (PPUBLIC_OBJECT_TYPE_INFORMATION)new BYTE[dwSize];
-        NTSTATUS ntReturn = pNTQO(hObject, ObjectTypeInformation, pObjectInfo, dwSize, &dwSize);
+	if (pNTQO != nullptr)
+	{
+		DWORD dwSize = sizeof(PUBLIC_OBJECT_TYPE_INFORMATION);
+		PPUBLIC_OBJECT_TYPE_INFORMATION pObjectInfo = (PPUBLIC_OBJECT_TYPE_INFORMATION)new BYTE[dwSize];
+		NTSTATUS ntReturn = pNTQO(hObject, ObjectTypeInformation, pObjectInfo, dwSize, &dwSize);
 
-        if (ntReturn == STATUS_BUFFER_OVERFLOW || ntReturn == STATUS_INFO_LENGTH_MISMATCH)
-        {
-            delete pObjectInfo;
-            pObjectInfo = (PPUBLIC_OBJECT_TYPE_INFORMATION)new BYTE[dwSize];
-            ntReturn = pNTQO(hObject, ObjectTypeInformation, pObjectInfo, dwSize, &dwSize);
-        }
+		if (ntReturn == STATUS_BUFFER_OVERFLOW || ntReturn == STATUS_INFO_LENGTH_MISMATCH)
+		{
+			delete pObjectInfo;
+			pObjectInfo = (PPUBLIC_OBJECT_TYPE_INFORMATION)new BYTE[dwSize];
+			ntReturn = pNTQO(hObject, ObjectTypeInformation, pObjectInfo, dwSize, &dwSize);
+		}
 
-        if ((ntReturn >= STATUS_SUCCESS) && (pObjectInfo->TypeName.Buffer != nullptr))
-        {
-            lpwsReturn = (LPWSTR)new BYTE[pObjectInfo->TypeName.Length + sizeof(WCHAR)];
-            ZeroMemory(lpwsReturn, pObjectInfo->TypeName.Length + sizeof(WCHAR));
-            CopyMemory(lpwsReturn, pObjectInfo->TypeName.Buffer, pObjectInfo->TypeName.Length);
-        }
+		if ((ntReturn >= STATUS_SUCCESS) && (pObjectInfo->TypeName.Buffer != nullptr))
+		{
+			lpwsReturn = (LPWSTR)new BYTE[pObjectInfo->TypeName.Length + sizeof(WCHAR)];
+			ZeroMemory(lpwsReturn, pObjectInfo->TypeName.Length + sizeof(WCHAR));
+			CopyMemory(lpwsReturn, pObjectInfo->TypeName.Buffer, pObjectInfo->TypeName.Length);
+		}
 
-        delete pObjectInfo;
-    }
+		delete pObjectInfo;
+	}
 
-    return lpwsReturn;
+	return lpwsReturn;
 }
 
 //
@@ -475,138 +475,138 @@ LPWSTR GetObjectTypeName(HANDLE hObject)
 // 
 DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 {
-    UNREFERENCED_PARAMETER(Params);
-	
-    auto pid = GetCurrentProcessId();
+	UNREFERENCED_PARAMETER(Params);
 
-    WSAPROTOCOL_INFOW wsaProtocolInfo = { 0 };
+	auto pid = GetCurrentProcessId();
 
-    const auto pNTQSI = reinterpret_cast<tNtQuerySystemInformation>(GetProcAddress(
-	    GetModuleHandle("NTDLL.DLL"),
-	    "NtQuerySystemInformation"
-    ));
-    
-    if (pNTQSI == nullptr)
-    {
-	    spdlog::error("Failed to acquire NtQuerySystemInformation API");
-	    return 1;
-    }
+	WSAPROTOCOL_INFOW wsaProtocolInfo = {0};
 
-    DWORD dwSize = sizeof(SYSTEM_HANDLE_INFORMATION);
+	const auto pNTQSI = reinterpret_cast<tNtQuerySystemInformation>(GetProcAddress(
+		GetModuleHandle("NTDLL.DLL"),
+		"NtQuerySystemInformation"
+	));
 
-    auto pHandleInfo = reinterpret_cast<PSYSTEM_HANDLE_INFORMATION>(new BYTE[dwSize]);
+	if (pNTQSI == nullptr)
+	{
+		spdlog::error("Failed to acquire NtQuerySystemInformation API");
+		return 1;
+	}
 
-    NTSTATUS ntReturn = pNTQSI(SystemHandleInformation, pHandleInfo, dwSize, &dwSize);
+	DWORD dwSize = sizeof(SYSTEM_HANDLE_INFORMATION);
+
+	auto pHandleInfo = reinterpret_cast<PSYSTEM_HANDLE_INFORMATION>(new BYTE[dwSize]);
+
+	NTSTATUS ntReturn = pNTQSI(SystemHandleInformation, pHandleInfo, dwSize, &dwSize);
 
 	//
 	// Get required buffer size for all handle meta-data
 	// 
-    while (ntReturn == STATUS_INFO_LENGTH_MISMATCH)
-    {
-	    delete pHandleInfo;
+	while (ntReturn == STATUS_INFO_LENGTH_MISMATCH)
+	{
+		delete pHandleInfo;
 
-    	//
-    	// The handle count can change between these calls, so just
-    	// allocate a bit more memory and it should be fine!
-    	// 
-	    dwSize += 1024;
+		//
+		// The handle count can change between these calls, so just
+		// allocate a bit more memory and it should be fine!
+		// 
+		dwSize += 1024;
 
-	    pHandleInfo = (PSYSTEM_HANDLE_INFORMATION)new BYTE[dwSize];
+		pHandleInfo = (PSYSTEM_HANDLE_INFORMATION)new BYTE[dwSize];
 
-	    ntReturn = pNTQSI(SystemHandleInformation, pHandleInfo, dwSize, &dwSize);
-    }
+		ntReturn = pNTQSI(SystemHandleInformation, pHandleInfo, dwSize, &dwSize);
+	}
 
-    if (ntReturn != STATUS_SUCCESS)
-    {
-        spdlog::error("NtQuerySystemInformation failed with status {}", ntReturn);
-        return 1;
-    }
+	if (ntReturn != STATUS_SUCCESS)
+	{
+		spdlog::error("NtQuerySystemInformation failed with status {}", ntReturn);
+		return 1;
+	}
 
 	//
 	// Walk all handles
 	// 
-    for (DWORD dwIdx = 0; dwIdx < pHandleInfo->NumberOfHandles; dwIdx++)
-    {
-	    const PSYSTEM_HANDLE_TABLE_ENTRY_INFO pEntry = &pHandleInfo->Handles[dwIdx];
+	for (DWORD dwIdx = 0; dwIdx < pHandleInfo->NumberOfHandles; dwIdx++)
+	{
+		const PSYSTEM_HANDLE_TABLE_ENTRY_INFO pEntry = &pHandleInfo->Handles[dwIdx];
 
-    	//
-    	// Skip processes other than ours
-    	// 
-	    if (pEntry->UniqueProcessId != pid)
-		    continue;
+		//
+		// Skip processes other than ours
+		// 
+		if (pEntry->UniqueProcessId != pid)
+			continue;
 
-	    auto* handle = reinterpret_cast<HANDLE>(pHandleInfo->Handles[dwIdx].HandleValue);
+		auto* handle = reinterpret_cast<HANDLE>(pHandleInfo->Handles[dwIdx].HandleValue);
 
-	    //
-	    // Attempt to get object name
-	    // 
-	    const LPWSTR lpwsName = GetObjectName(handle);
+		//
+		// Attempt to get object name
+		// 
+		const LPWSTR lpwsName = GetObjectName(handle);
 
-	    if (lpwsName == nullptr)
-		    continue;
+		if (lpwsName == nullptr)
+			continue;
 
-    	//
-    	// Check if handle belongs to "Ancillary Function Driver" (network stack)
-    	// 
-	    if (!wcscmp(lpwsName, L"\\Device\\Afd"))
-	    {
-		    spdlog::info("Found open socket, attempting duplication");
+		//
+		// Check if handle belongs to "Ancillary Function Driver" (network stack)
+		// 
+		if (!wcscmp(lpwsName, L"\\Device\\Afd"))
+		{
+			spdlog::info("Found open socket, attempting duplication");
 
-	    	//
-	    	// Duplication is both a validity check and useful for logging
-	    	// 
-		    NTSTATUS status = WSADuplicateSocketW(
-			    reinterpret_cast<SOCKET>(handle),
-			    GetCurrentProcessId(),
-			    &wsaProtocolInfo
-		    );
+			//
+			// Duplication is both a validity check and useful for logging
+			// 
+			NTSTATUS status = WSADuplicateSocketW(
+				reinterpret_cast<SOCKET>(handle),
+				GetCurrentProcessId(),
+				&wsaProtocolInfo
+			);
 
-		    if (status != 0)
-			    continue;
+			if (status != 0)
+				continue;
 
-	    	//
-	    	// Create new duplicated socket
-	    	// 
-		    const SOCKET targetSocket = WSASocketW(
-			    wsaProtocolInfo.iAddressFamily,
-			    wsaProtocolInfo.iSocketType,
-			    wsaProtocolInfo.iProtocol,
-			    &wsaProtocolInfo,
-			    0,
-			    WSA_FLAG_OVERLAPPED
-		    );
+			//
+			// Create new duplicated socket
+			// 
+			const SOCKET targetSocket = WSASocketW(
+				wsaProtocolInfo.iAddressFamily,
+				wsaProtocolInfo.iSocketType,
+				wsaProtocolInfo.iProtocol,
+				&wsaProtocolInfo,
+				0,
+				WSA_FLAG_OVERLAPPED
+			);
 
-		    if (targetSocket != INVALID_SOCKET)
-		    {
-			    struct sockaddr_in sockaddr;
-			    int len;
-			    len = sizeof(SOCKADDR_IN);
+			if (targetSocket != INVALID_SOCKET)
+			{
+				struct sockaddr_in sockaddr;
+				int len;
+				len = sizeof(SOCKADDR_IN);
 
-			    // 
-			    // This call should succeed now
-			    // 
-			    if (getpeername(targetSocket, reinterpret_cast<SOCKADDR*>(&sockaddr), &len) == 0)
-			    {
-				    spdlog::info("Duplicated socket {}, closing", inet_ntoa(sockaddr.sin_addr));
+				// 
+				// This call should succeed now
+				// 
+				if (getpeername(targetSocket, reinterpret_cast<SOCKADDR*>(&sockaddr), &len) == 0)
+				{
+					spdlog::info("Duplicated socket {}, closing", inet_ntoa(sockaddr.sin_addr));
 
-			    	//
-			    	// Close duplicate
-			    	// 
-                    closesocket(targetSocket);
+					//
+					// Close duplicate
+					// 
+					closesocket(targetSocket);
 
-			    	//
-			    	// Terminate original socket
-			    	// 
-				    CloseHandle(handle);
-			    }
-		    }
-	    }
+					//
+					// Terminate original socket
+					// 
+					CloseHandle(handle);
+				}
+			}
+		}
 
-	    delete lpwsName;
-    }
+		delete lpwsName;
+	}
 
-    delete pHandleInfo;
-    
+	delete pHandleInfo;
+
 	return 0;
 }
 
