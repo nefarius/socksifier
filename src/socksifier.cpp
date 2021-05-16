@@ -470,8 +470,13 @@ LPWSTR GetObjectTypeName(HANDLE hObject)
     return lpwsReturn;
 }
 
+//
+// Finds and kills existing TCP connections within this process
+// 
 DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 {
+    UNREFERENCED_PARAMETER(Params);
+	
     auto pid = GetCurrentProcessId();
 
     WSAPROTOCOL_INFOW wsaProtocolInfo = { 0 };
