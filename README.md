@@ -4,6 +4,10 @@ A Windows DLL which hooks the `connect()` API to redirect sockets to a SOCKS5 pr
 
 [![Build status](https://ci.appveyor.com/api/projects/status/bwesvx70s524t30w/branch/master?svg=true)](https://ci.appveyor.com/project/nefarius/socksifier/branch/master)
 
+## Motivation
+
+Over time less and less modern network-enabled applications offer the user with the ability to specify an HTTP or SOCKS proxy server. For this specific need, so called "proxification" applications exist, which are unfortunately scarce and closed-source. This fork is an attempt to provide a modern, *working* and **open** solution for this very specific case.
+
 ## Build
 
 [Follow the Vcpkg Quick Start](https://github.com/Microsoft/vcpkg#quick-start) and install the following packages:
@@ -18,7 +22,10 @@ Optionally set up the following environment variables to configure the DLL. Defa
 
 - `SOCKSIFIER_ADDRESS` - IP address of the SOCKS5 proxy to connect to (defaults to `127.0.0.1`)
 - `SOCKSIFIER_PORT` - Port of the SOCKS5 proxy to connect to (defaults to `1080`)
-- `SOCKSIFIER_LOGFILE` - Absolute path or file name to write the log to (useful for diagnostics)
+
+## Diagnostics
+
+The library logs to the Windows Debugger Backend and can be observed with [DebugView++](https://github.com/CobaltFusion/DebugViewPP) or similar.
 
 ## Sources
 

@@ -7,7 +7,7 @@
 #include <detours/detours.h>
 
 #include <spdlog/spdlog.h>
-#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/msvc_sink.h>
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -479,6 +479,8 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 
 	auto pid = GetCurrentProcessId();
 
+    spdlog::info("Attempting to reap open connections for PID {}", pid);
+
 	WSAPROTOCOL_INFOW wsaProtocolInfo = {0};
 
 	const auto pNTQSI = reinterpret_cast<tNtQuerySystemInformation>(GetProcAddress(
@@ -494,7 +496,7 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 
 	DWORD dwSize = sizeof(SYSTEM_HANDLE_INFORMATION);
 
-	auto pHandleInfo = reinterpret_cast<PSYSTEM_HANDLE_INFORMATION>(new BYTE[dwSize]);
+	auto* pHandleInfo = reinterpret_cast<PSYSTEM_HANDLE_INFORMATION>(new BYTE[dwSize]);
 
 	NTSTATUS ntReturn = pNTQSI(SystemHandleInformation, pHandleInfo, dwSize, &dwSize);
 
@@ -561,8 +563,11 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 				&wsaProtocolInfo
 			);
 
-			if (status != 0)
-				continue;
+            if (status != 0)
+            {
+                spdlog::warn("Couldn't duplicate, moving on");
+                continue;
+            }
 
 			//
 			// Create new duplicated socket
@@ -576,30 +581,32 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 				WSA_FLAG_OVERLAPPED
 			);
 
-			if (targetSocket != INVALID_SOCKET)
-			{
-				struct sockaddr_in sockaddr;
-				int len;
-				len = sizeof(SOCKADDR_IN);
+            if (targetSocket != INVALID_SOCKET)
+            {
+                struct sockaddr_in sockaddr;
+                int len;
+                len = sizeof(SOCKADDR_IN);
 
-				// 
-				// This call should succeed now
-				// 
-				if (getpeername(targetSocket, reinterpret_cast<SOCKADDR*>(&sockaddr), &len) == 0)
-				{
-					spdlog::info("Duplicated socket {}, closing", inet_ntoa(sockaddr.sin_addr));
+                // 
+                // This call should succeed now
+                // 
+                if (getpeername(targetSocket, reinterpret_cast<SOCKADDR*>(&sockaddr), &len) == 0)
+                {
+                    spdlog::info("Duplicated socket {}, closing", inet_ntoa(sockaddr.sin_addr));
 
-					//
-					// Close duplicate
-					// 
-					closesocket(targetSocket);
+                    //
+                    // Close duplicate
+                    // 
+                    closesocket(targetSocket);
 
-					//
-					// Terminate original socket
-					// 
-					CloseHandle(handle);
-				}
-			}
+                    //
+                    // Terminate original socket
+                    // 
+                    CloseHandle(handle);
+                }
+                else LogWSAError(); // For diagnostics, ignore otherwise
+            }
+            else LogWSAError(); // For diagnostics, ignore otherwise
 		}
 
 		delete lpwsName;
@@ -613,37 +620,34 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 
 BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 {
-    if (DetourIsHelperProcess()) {
-        return TRUE;
-    }
-	
-    switch (reason) {
-    case DLL_PROCESS_ATTACH:
+	if (DetourIsHelperProcess())
+	{
+		return TRUE;
+	}
 
-	    {
-			CHAR logfileVar[MAX_PATH];
+	switch (reason)
+	{
+	case DLL_PROCESS_ATTACH:
 
-    		//
-    		// Optional logfile path enables logging to file
-    		// 
-            if (GetEnvironmentVariableA("SOCKSIFIER_LOGFILE", logfileVar, ARRAYSIZE(logfileVar)))
-            {
-                auto logger = spdlog::basic_logger_mt(
-                    "socksifier",
-                    logfileVar
-                );
+		{
+			//
+			// Observe best with https://github.com/CobaltFusion/DebugViewPP
+			// 
+			auto sink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
+			sink->set_level(spdlog::level::debug);
 
-                spdlog::set_level(spdlog::level::trace);
-                logger->flush_on(spdlog::level::info);
+			auto logger = std::make_shared<spdlog::logger>("socksifier", sink);
 
-                set_default_logger(logger);
-            }
+			spdlog::set_level(spdlog::level::debug);
+			logger->flush_on(spdlog::level::debug);
 
-    		//
-    		// Default values
-    		// 
-            CHAR addressVar[MAX_PATH] = "127.0.0.1";
-    		CHAR portVar[MAX_PATH] = "1080";
+			set_default_logger(logger);
+
+			//
+			// Default values
+			// 
+			CHAR addressVar[MAX_PATH] = "127.0.0.1";
+			CHAR portVar[MAX_PATH] = "1080";
 
 			//
 			// Mandatory variables
@@ -653,38 +657,38 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 
 			inet_pton(AF_INET, addressVar, &settings.proxy_address);
 			settings.proxy_port = _byteswap_ushort(static_cast<USHORT>(strtol(portVar, nullptr, 10)));
-            
-            spdlog::info("Using SOCKS proxy: {}:{}", addressVar, portVar);
 
-    		//
-    		// Start socket enumeration in new thread
-    		// 
-            CreateThread(
-                nullptr,
-                0,
-                reinterpret_cast<LPTHREAD_START_ROUTINE>(SocketEnumMainThread),
-                nullptr,
-                0,
-                nullptr
-            );
-	    }
+			spdlog::info("Using SOCKS proxy: {}:{}", addressVar, portVar);
 
-        DisableThreadLibraryCalls(dll_handle);
-        DetourRestoreAfterWith();
+			//
+			// Start socket enumeration in new thread
+			// 
+			CreateThread(
+				nullptr,
+				0,
+				reinterpret_cast<LPTHREAD_START_ROUTINE>(SocketEnumMainThread),
+				nullptr,
+				0,
+				nullptr
+			);
+		}
 
-        DetourTransactionBegin();
-        DetourUpdateThread(GetCurrentThread());
-        DetourAttach(&(PVOID)real_connect, my_connect);
-        DetourTransactionCommit();
+		DisableThreadLibraryCalls(dll_handle);
+		DetourRestoreAfterWith();
 
-        break;
+		DetourTransactionBegin();
+		DetourUpdateThread(GetCurrentThread());
+		DetourAttach(&static_cast<PVOID>(real_connect), my_connect);
+		DetourTransactionCommit();
 
-    case DLL_PROCESS_DETACH:
-        DetourTransactionBegin();
-        DetourUpdateThread(GetCurrentThread());
-        DetourDetach(&(PVOID)real_connect, my_connect);
-        DetourTransactionCommit();
-        break;
-}
-    return TRUE;
+		break;
+
+	case DLL_PROCESS_DETACH:
+		DetourTransactionBegin();
+		DetourUpdateThread(GetCurrentThread());
+		DetourDetach(&static_cast<PVOID>(real_connect), my_connect);
+		DetourTransactionCommit();
+		break;
+	}
+	return TRUE;
 }
