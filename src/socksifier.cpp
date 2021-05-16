@@ -659,18 +659,6 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 			settings.proxy_port = _byteswap_ushort(static_cast<USHORT>(strtol(portVar, nullptr, 10)));
 
 			spdlog::info("Using SOCKS proxy: {}:{}", addressVar, portVar);
-
-			//
-			// Start socket enumeration in new thread
-			// 
-			CreateThread(
-				nullptr,
-				0,
-				reinterpret_cast<LPTHREAD_START_ROUTINE>(SocketEnumMainThread),
-				nullptr,
-				0,
-				nullptr
-			);
 		}
 
 		DisableThreadLibraryCalls(dll_handle);
@@ -681,6 +669,18 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 		DetourAttach(&static_cast<PVOID>(real_connect), my_connect);
 		DetourTransactionCommit();
 
+		//
+		// Start socket enumeration in new thread
+		// 
+		CreateThread(
+			nullptr,
+			0,
+			reinterpret_cast<LPTHREAD_START_ROUTINE>(SocketEnumMainThread),
+			nullptr,
+			0,
+			nullptr
+		);
+		
 		break;
 
 	case DLL_PROCESS_DETACH:
