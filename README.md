@@ -14,7 +14,7 @@ A Windows DLL which hooks the `connect()` API to redirect sockets to a SOCKS5 pr
 
 To enable the redirection you just have to inject the DLL into your target process.
 
-Set up the following environment variables to configure the DLL. Default values are used if omitted.
+Optionally set up the following environment variables to configure the DLL. Default values are used if omitted.
 
 - `SOCKSIFIER_ADDRESS` - IP address of the SOCKS5 proxy to connect to (defaults to `127.0.0.1`)
 - `SOCKSIFIER_PORT` - Port of the SOCKS5 proxy to connect to (defaults to `1080`)
