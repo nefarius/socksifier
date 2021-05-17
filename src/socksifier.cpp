@@ -592,7 +592,11 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
                 // 
                 if (getpeername(targetSocket, reinterpret_cast<SOCKADDR*>(&sockaddr), &len) == 0)
                 {
-                    spdlog::info("Duplicated socket {}, closing", inet_ntoa(sockaddr.sin_addr));
+                    char addr[INET_ADDRSTRLEN];
+                    ZeroMemory(addr, ARRAYSIZE(addr));
+                    inet_ntop(AF_INET, &(sockaddr.sin_addr), addr, INET_ADDRSTRLEN);
+                	
+                    spdlog::info("Duplicated socket {}, closing", addr);
 
                     //
                     // Close duplicate
