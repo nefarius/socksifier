@@ -542,78 +542,87 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 		//
 		// Attempt to get object name
 		// 
-		const LPWSTR lpwsName = GetObjectName(handle);
+		LPCWSTR objectName = GetObjectName(handle);
 
-		if (lpwsName == nullptr)
+		if (objectName == nullptr)
 			continue;
 
 		//
 		// Check if handle belongs to "Ancillary Function Driver" (network stack)
 		// 
-		if (!wcscmp(lpwsName, L"\\Device\\Afd"))
+		if (wcscmp(objectName, L"\\Device\\Afd") != 0)
 		{
-			spdlog::info("Found open socket, attempting duplication");
-
-			//
-			// Duplication is both a validity check and useful for logging
-			// 
-			NTSTATUS status = WSADuplicateSocketW(
-				reinterpret_cast<SOCKET>(handle),
-				GetCurrentProcessId(),
-				&wsaProtocolInfo
-			);
-
-            if (status != 0)
-            {
-                spdlog::warn("Couldn't duplicate, moving on");
-                continue;
-            }
-
-			//
-			// Create new duplicated socket
-			// 
-			const SOCKET targetSocket = WSASocketW(
-				wsaProtocolInfo.iAddressFamily,
-				wsaProtocolInfo.iSocketType,
-				wsaProtocolInfo.iProtocol,
-				&wsaProtocolInfo,
-				0,
-				WSA_FLAG_OVERLAPPED
-			);
-
-            if (targetSocket != INVALID_SOCKET)
-            {
-                struct sockaddr_in sockaddr;
-                int len;
-                len = sizeof(SOCKADDR_IN);
-
-                // 
-                // This call should succeed now
-                // 
-                if (getpeername(targetSocket, reinterpret_cast<SOCKADDR*>(&sockaddr), &len) == 0)
-                {
-                    char addr[INET_ADDRSTRLEN];
-                    ZeroMemory(addr, ARRAYSIZE(addr));
-                    inet_ntop(AF_INET, &(sockaddr.sin_addr), addr, INET_ADDRSTRLEN);
-                	
-                    spdlog::info("Duplicated socket {}, closing", addr);
-
-                    //
-                    // Close duplicate
-                    // 
-                    closesocket(targetSocket);
-
-                    //
-                    // Terminate original socket
-                    // 
-                    CloseHandle(handle);
-                }
-                else LogWSAError(); // For diagnostics, ignore otherwise
-            }
-            else LogWSAError(); // For diagnostics, ignore otherwise
+            delete objectName;
+			continue;
 		}
 
-		delete lpwsName;
+        delete objectName;
+		
+		spdlog::info("Found open socket, attempting duplication");
+
+		//
+		// Duplication is both a validity check and useful for logging
+		// 
+		const NTSTATUS status = WSADuplicateSocketW(
+			reinterpret_cast<SOCKET>(handle),
+			GetCurrentProcessId(),
+			&wsaProtocolInfo
+		);
+
+		if (status != STATUS_SUCCESS)
+		{
+			//
+			// Not a socket handle, ignore
+			// 
+			if (WSAGetLastError() == WSAENOTSOCK)
+				continue;
+
+			spdlog::warn("Couldn't duplicate, moving on");
+			LogWSAError(); // For diagnostics, ignore otherwise
+			continue;
+		}
+
+		//
+		// Create new duplicated socket
+		// 
+		const SOCKET targetSocket = WSASocketW(
+			wsaProtocolInfo.iAddressFamily,
+			wsaProtocolInfo.iSocketType,
+			wsaProtocolInfo.iProtocol,
+			&wsaProtocolInfo,
+			0,
+			WSA_FLAG_OVERLAPPED
+		);
+
+		if (targetSocket != INVALID_SOCKET)
+		{
+			struct sockaddr_in sockaddr;
+			int len = sizeof(SOCKADDR_IN);
+
+			// 
+			// This call should succeed now
+			// 
+			if (getpeername(targetSocket, reinterpret_cast<SOCKADDR*>(&sockaddr), &len) == 0)
+			{
+				char addr[INET_ADDRSTRLEN];
+				ZeroMemory(addr, ARRAYSIZE(addr));
+				inet_ntop(AF_INET, &(sockaddr.sin_addr), addr, INET_ADDRSTRLEN);
+
+				spdlog::info("Duplicated socket {}, closing", addr);
+
+				//
+				// Close duplicate
+				// 
+				closesocket(targetSocket);
+
+				//
+				// Terminate original socket
+				// 
+				CloseHandle(handle);
+			}
+			else LogWSAError(); // For diagnostics, ignore otherwise
+		}
+		else LogWSAError(); // For diagnostics, ignore otherwise
 	}
 
 	delete pHandleInfo;
