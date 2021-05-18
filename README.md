@@ -16,7 +16,7 @@ Over time less and less modern network-enabled applications offer the user with 
 
 ## Getting started
 
-You can get pre-built binaries (x86, x64) [at the release page](../releases/latest).
+You can get pre-built binaries (x86, x64) [at the release page](../../releases/latest).
 
 To enable the redirection you just have to inject the DLL into your target process. Either use a [DLL injector tool](https://github.com/nefarius/Injector) or make injection persistent across application launches with additional help from [LoadDLLViaAppInit](https://blog.didierstevens.com/2009/12/23/loaddllviaappinit/) or similar tools (IAT patching and alike).
 
