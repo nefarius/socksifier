@@ -20,3 +20,15 @@ artifacts:
 - path: 'bin**\*.dll'
 cache:
 - c:\tools\vcpkg\installed\
+deploy:
+  release: v$(APPVEYOR_BUILD_VERSION)
+  description: 'Socksifier DLL'
+  provider: GitHub
+  auth_token:
+    secure: GvOeZH3msooHWqoQj46UsLaojyMsnudmNdfEMUSJJfrIBuLwAYaMeI5FcxKSFVv7
+  artifact: /.*\.DLL/
+  draft: false
+  prerelease: false
+  on:
+    branch: master
+    APPVEYOR_REPO_TAG: true
