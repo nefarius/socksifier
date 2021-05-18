@@ -27,6 +27,8 @@ Optionally set up the following environment variables to configure the DLL. Defa
 
 The library logs to the Windows Debugger Backend and can be observed with [DebugView++](https://github.com/CobaltFusion/DebugViewPP) or similar.
 
+![iyMLDzGjVq.png](assets/iyMLDzGjVq.png)
+
 ## Sources
 
 - [Windows Sockets Error Codes](https://docs.microsoft.com/en-us/windows/win32/winsock/windows-sockets-error-codes-2)
