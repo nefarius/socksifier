@@ -10,6 +10,8 @@ before_build:
 - cmd: vcpkg integrate install
 - cmd: vcpkg upgrade --no-dry-run
 - cmd: vcpkg install spdlog:x86-windows-static spdlog:x64-windows-static detours:x86-windows-static detours:x64-windows-static
+- ps: Invoke-WebRequest "https://github.com/nefarius/vpatch/releases/latest/download/vpatch.exe" -OutFile vpatch.exe
+- cmd: vpatch.exe --stamp-version "%APPVEYOR_BUILD_VERSION%" --target-file ".\src\%APPVEYOR_PROJECT_NAME%.rc" --resource.file-version --resource.product-version
 configuration: Release
 platform:
 - x86
