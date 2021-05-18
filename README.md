@@ -16,6 +16,16 @@ After the hook is established, the process's existing connection handles get enu
 
 The detoured function contains the logic necessary to re-route the to-be-established socket connection to a SOCKS5 proxy by performing the necessary protocol-specific handshake and upon success simply returns the socket back to the callee, which is now transparently talking to the proxy instead of the origin destination (e.g. HTTP(S) or WebSocket connection).
 
+## Limitations
+
+This fork has been designed for and tested with [Electron](https://www.electronjs.org/)-based applications and [Shadowsocks](https://shadowsocks.org/) as SOCKS5 proxy **only**. Other use-cases might work but are left to the reader to discover by experimentation.
+
+## Disclaimer
+
+This project makes heavy use of code and mechanisms unfortunately widely (ab)used by malware (loading foreign code into processes, manipulating handles and network traffic flow), therefore might trigger anti-virus/anti-cheat solutions. Make sure to add an exclusion to your AV in case this becomes and issue and *refrain* from injecting into anti-cheat protected games as this *might* pose the risk of a false-positive ban. You have been warned ❤️
+
+**The reader is highly encouraged to study the code and build the project by themselves** instead of blindly trusting the provided binaries.
+
 ## Build
 
 [Follow the Vcpkg Quick Start](https://github.com/Microsoft/vcpkg#quick-start) and install the following packages:
