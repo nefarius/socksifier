@@ -2,7 +2,7 @@
 
 A Windows DLL which hooks the `connect()` API to redirect sockets to a SOCKS5 proxy server.
 
-[![Build status](https://ci.appveyor.com/api/projects/status/bwesvx70s524t30w/branch/master?svg=true)](https://ci.appveyor.com/project/nefarius/socksifier/branch/master)
+[![Build status](https://ci.appveyor.com/api/projects/status/bwesvx70s524t30w/branch/master?svg=true)](https://ci.appveyor.com/project/nefarius/socksifier/branch/master) [![GitHub All Releases](https://img.shields.io/github/downloads/Nefarius/Socksifier/total)](https://somsubhra.github.io/github-release-stats/?username=Nefarius&repository=Socksifier)
 
 ## Motivation
 
@@ -16,12 +16,16 @@ Over time less and less modern network-enabled applications offer the user with 
 
 ## Getting started
 
-To enable the redirection you just have to inject the DLL into your target process.
+You can get pre-built binaries (x86, x64) [at the release page](../releases/latest).
+
+To enable the redirection you just have to inject the DLL into your target process. Either use a [DLL injector tool](https://github.com/nefarius/Injector) or make injection persistent across application launches with additional help from [LoadDLLViaAppInit](https://blog.didierstevens.com/2009/12/23/loaddllviaappinit/) or similar tools (IAT patching and alike).
 
 Optionally set up the following environment variables to configure the DLL. Default values are used if omitted.
 
 - `SOCKSIFIER_ADDRESS` - IP address of the SOCKS5 proxy to connect to (defaults to `127.0.0.1`)
 - `SOCKSIFIER_PORT` - Port of the SOCKS5 proxy to connect to (defaults to `1080`)
+
+The default values assume that a [Shadowsocks client](https://github.com/shadowsocks/shadowsocks-windows) is running and listening on localhost.
 
 ## Diagnostics
 
