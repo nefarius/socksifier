@@ -24,7 +24,7 @@ This fork has been designed for and tested with [Electron](https://www.electronj
 
 This project makes heavy use of code and mechanisms unfortunately widely (ab)used by malware (loading foreign code into processes, manipulating handles and network traffic flow), therefore might trigger anti-virus/anti-cheat solutions. Make sure to add an exclusion to your AV in case this becomes and issue and *refrain* from injecting into anti-cheat protected games as this *might* pose the risk of a false-positive ban. You have been warned ❤️
 
-**The reader is highly encouraged to study the code and build the project by themselves** instead of blindly trusting the provided binaries.
+**The reader is highly encouraged to study the code and build the project by themselves** instead of trusting the provided binaries.
 
 ## Build
 
@@ -50,6 +50,18 @@ The default values assume that a [Shadowsocks client](https://github.com/shadows
 The library logs to the Windows Debugger Backend and can be observed with [DebugView++](https://github.com/CobaltFusion/DebugViewPP) or similar.
 
 ![iyMLDzGjVq.png](assets/iyMLDzGjVq.png)
+
+## Example
+
+Observe the change in network connections with e.g. [NirSoft CurrPorts](https://www.nirsoft.net/utils/cports.html).
+
+### Before
+
+![fLj62LY1rn.png](assets/fLj62LY1rn.png)
+
+### After
+
+![blk1DOYFW7.png](assets/blk1DOYFW7.png)
 
 ## Sources
 
