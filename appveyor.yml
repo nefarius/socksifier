@@ -8,7 +8,7 @@ install:
     cd %appveyor_build_folder%
 skip_commits:
   files:
-  - *.md
+    - '**/*.md'
 before_build:
 - cmd: vcpkg integrate install
 - cmd: vcpkg upgrade --no-dry-run
