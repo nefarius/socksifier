@@ -6,6 +6,9 @@ install:
     git pull > NUL
     .\bootstrap-vcpkg.bat > NUL
     cd %appveyor_build_folder%
+skip_commits:
+  files:
+  - *.md
 before_build:
 - cmd: vcpkg integrate install
 - cmd: vcpkg upgrade --no-dry-run
