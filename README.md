@@ -8,6 +8,14 @@ A Windows DLL which hooks the `connect()` API to redirect sockets to a SOCKS5 pr
 
 Over time less and less modern network-enabled applications offer the user with the ability to specify an HTTP or SOCKS proxy server. For this specific need, so called "proxification" applications exist, which are unfortunately scarce and closed-source. This fork is an attempt to provide a modern, *working* and **open** solution for this very specific case.
 
+## How it works
+
+Socksifier is a self-contained DLL with no external dependencies (except the APIs shipped with Windows) that is meant to [get loaded into the process](https://web.archive.org/web/20131012071541/http://blog.opensecurityresearch.com/2013/01/windows-dll-injection-basics.html) who's connections should get "proxified" and achieves this by [API-hooking](https://www.codeproject.com/Articles/2082/API-hooking-revealed) the low-level `connect()` socket function. API-hooking is performed upon library load using the well-known and battle-tested [Microsoft Detours](https://github.com/Microsoft/Detours) library.
+
+After the hook is established, the process's existing connection handles get enumerated and terminated, forcing the network layer of the application to re-establish them, but now calling the hooked `connect`-variant instead.
+
+The detoured function contains the logic necessary to re-route the to-be-established socket connection to a SOCKS5 proxy by performing the necessary protocol-specific handshake and upon success simply returns the socket back to the callee, which is now transparently talking to the proxy instead of the origin destination (e.g. HTTP(S) or WebSocket connection).
+
 ## Build
 
 [Follow the Vcpkg Quick Start](https://github.com/Microsoft/vcpkg#quick-start) and install the following packages:
