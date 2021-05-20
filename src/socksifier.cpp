@@ -26,6 +26,52 @@ extern "C" {
 
     static int (WINAPI * real_connect)(SOCKET s, const struct sockaddr * name, int namelen) = connect;
 
+    static int (WINAPI * real_bind)(
+        SOCKET         s,
+        const sockaddr* addr,
+        int            namelen
+    ) = bind;
+
+    static int (WINAPI * real_WSASendTo)(
+        SOCKET                             s,
+        LPWSABUF                           lpBuffers,
+        DWORD                              dwBufferCount,
+        LPDWORD                            lpNumberOfBytesSent,
+        DWORD                              dwFlags,
+        const sockaddr* lpTo,
+        int                                iTolen,
+        LPWSAOVERLAPPED                    lpOverlapped,
+        LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
+    ) = WSASendTo;
+
+    static int (WINAPI * real_WSARecvFrom)(
+        SOCKET                             s,
+        LPWSABUF                           lpBuffers,
+        DWORD                              dwBufferCount,
+        LPDWORD                            lpNumberOfBytesRecvd,
+        LPDWORD                            lpFlags,
+        sockaddr* lpFrom,
+        LPINT                              lpFromlen,
+        LPWSAOVERLAPPED                    lpOverlapped,
+        LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
+    ) = WSARecvFrom;
+	
+    static int (WINAPI * real_send)(
+        SOCKET     s,
+        const char* buf,
+        int        len,
+        int        flags
+    ) = send;
+	
+    static int (WINAPI * real_sendto)(
+        SOCKET         s,
+        const char* buf,
+        int            len,
+        int            flags,
+        const sockaddr* to,
+        int            tolen
+    ) = sendto;
+	
     LPFN_CONNECTEX ConnectExPtr = NULL;
 
 #ifdef __cplusplus
@@ -401,6 +447,160 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     return ERROR_SUCCESS;
 }
 
+int WINAPI my_bind(
+    SOCKET         s,
+    const sockaddr* addr,
+    int            namelen
+)
+{
+    spdlog::info("my_bind called ({})", s);
+
+    int optType = -1;
+    int optLen = sizeof(int);
+
+    if (getsockopt(s, SOL_SOCKET, SO_TYPE, reinterpret_cast<PCHAR>(&optType), &optLen) == 0)
+    {
+        const struct sockaddr_in* dest = (const struct sockaddr_in*)addr;
+
+        char addr[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
+        const auto dest_port = ntohs(dest->sin_port);
+
+        if (optType == SOCK_DGRAM)
+	        spdlog::info("Binding UDP socket to {}:{}", addr, dest_port);
+        else
+            spdlog::info("Binding TCP socket to {}:{}", addr, dest_port);
+    }
+	
+    return real_bind(s, addr, namelen);
+}
+
+int WINAPI my_WSASendTo(
+    SOCKET                             s,
+    LPWSABUF                           lpBuffers,
+    DWORD                              dwBufferCount,
+    LPDWORD                            lpNumberOfBytesSent,
+    DWORD                              dwFlags,
+    const sockaddr* lpTo,
+    int                                iTolen,
+    LPWSAOVERLAPPED                    lpOverlapped,
+    LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
+)
+{
+    if (lpOverlapped)
+        spdlog::info("my_WSASendTo called (OVERLAPPED) ({})", s);
+    else
+        spdlog::info("my_WSASendTo called");
+
+    const struct sockaddr_in* dest = (const struct sockaddr_in*)lpTo;
+
+    char addr[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
+    const auto dest_port = ntohs(dest->sin_port);
+
+    spdlog::info("Sending UDP packet to {}:{}", addr, dest_port);
+	
+    return real_WSASendTo(
+        s,
+        lpBuffers,
+        dwBufferCount,
+        lpNumberOfBytesSent,
+        dwFlags,
+        lpTo, 
+        iTolen,
+        lpOverlapped,
+        lpCompletionRoutine
+    );
+}
+
+int WINAPI my_WSARecvFrom(
+    SOCKET                             s,
+    LPWSABUF                           lpBuffers,
+    DWORD                              dwBufferCount,
+    LPDWORD                            lpNumberOfBytesRecvd,
+    LPDWORD                            lpFlags,
+    sockaddr* lpFrom,
+    LPINT                              lpFromlen,
+    LPWSAOVERLAPPED                    lpOverlapped,
+    LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
+)
+{
+	if (lpOverlapped)
+		spdlog::info("my_WSARecvFrom called (OVERLAPPED)");
+    else
+        spdlog::info("my_WSARecvFrom called");
+
+    const struct sockaddr_in* dest = (const struct sockaddr_in*)lpFrom;
+
+    char addr[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
+    const auto dest_port = ntohs(dest->sin_port);
+
+    spdlog::info("Received UDP packet from {}:{}", addr, dest_port);
+	
+    return real_WSARecvFrom(
+        s,
+        lpBuffers,
+        dwBufferCount,
+        lpNumberOfBytesRecvd,
+        lpFlags,
+        lpFrom,
+        lpFromlen,
+        lpOverlapped,
+        lpCompletionRoutine
+    );
+}
+
+int WINAPI my_send(
+    SOCKET     s,
+    const char* buf,
+    int        len,
+    int        flags
+)
+{
+    spdlog::info("my_send called");
+
+    int optType = -1;
+    int optLen = sizeof(int);
+
+    if (getsockopt(s, SOL_SOCKET, SO_TYPE, reinterpret_cast<PCHAR>(&optType), &optLen) == 0
+        && optType == SOCK_DGRAM)
+    {        
+        spdlog::info("Sending UDP packet");
+    }
+
+    return real_send(s, buf, len, flags);
+}
+
+int WINAPI my_sendto(
+    SOCKET         s,
+    const char* buf,
+    int            len,
+    int            flags,
+    const sockaddr* to,
+    int            tolen
+)
+{
+    int optType = -1;
+    int optLen = sizeof(int);
+
+    if (getsockopt(s, SOL_SOCKET, SO_TYPE, reinterpret_cast<PCHAR>(&optType), &optLen) == 0
+        && optType == SOCK_DGRAM)
+    {
+        const struct sockaddr_in* dest = (const struct sockaddr_in*)to;
+    	
+        char addr[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
+        const auto dest_port = ntohs(dest->sin_port);
+
+        spdlog::info("Sending UDP packet to {}:{}", addr, dest_port);
+    }
+
+    spdlog::info("real_sendto called");
+	
+    return real_sendto(s, buf, len, flags, to, tolen);
+}
+
 
 LPWSTR GetObjectName(HANDLE hObject)
 {
@@ -680,19 +880,22 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 		DetourTransactionBegin();
 		DetourUpdateThread(GetCurrentThread());
 		DetourAttach(&static_cast<PVOID>(real_connect), my_connect);
+        DetourAttach(&static_cast<PVOID>(real_bind), my_bind);
+        DetourAttach(&static_cast<PVOID>(real_WSASendTo), my_WSASendTo);
+        DetourAttach(&static_cast<PVOID>(real_WSARecvFrom), my_WSARecvFrom);
 		DetourTransactionCommit();
 
 		//
 		// Start socket enumeration in new thread
 		// 
-		CreateThread(
+		/*CreateThread(
 			nullptr,
 			0,
 			reinterpret_cast<LPTHREAD_START_ROUTINE>(SocketEnumMainThread),
 			nullptr,
 			0,
 			nullptr
-		);
+		);*/
 		
 		break;
 
@@ -700,6 +903,9 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 		DetourTransactionBegin();
 		DetourUpdateThread(GetCurrentThread());
 		DetourDetach(&static_cast<PVOID>(real_connect), my_connect);
+        DetourDetach(&static_cast<PVOID>(real_bind), my_bind);
+        DetourDetach(&static_cast<PVOID>(real_WSASendTo), my_WSASendTo);
+        DetourDetach(&static_cast<PVOID>(real_WSARecvFrom), my_WSARecvFrom);
 		DetourTransactionCommit();
 		break;
 	}
