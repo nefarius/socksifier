@@ -4,6 +4,8 @@
 #include <Windows.h>
 #include "NtApi.h"
 
+#include <map>
+
 #include <detours/detours.h>
 
 #include <spdlog/spdlog.h>
@@ -18,6 +20,8 @@ typedef struct settings {
 } setting_t;
 
 static setting_t settings;
+
+static std::map<SOCKET, SOCKADDR_IN> g_UdpRoutingMap;
 
 
 #ifdef __cplusplus
@@ -458,19 +462,187 @@ int WINAPI my_bind(
     int optType = -1;
     int optLen = sizeof(int);
 
-    if (getsockopt(s, SOL_SOCKET, SO_TYPE, reinterpret_cast<PCHAR>(&optType), &optLen) == 0)
+	//
+	// We need to know the socket type
+	// 	
+    if (getsockopt(s, SOL_SOCKET, SO_TYPE, reinterpret_cast<PCHAR>(&optType), &optLen) != 0)
+        return real_bind(s, addr, namelen);
+        
+    const struct sockaddr_in* dest = (const struct sockaddr_in*)addr;
+
+    //char address[INET_ADDRSTRLEN];
+    //inet_ntop(AF_INET, &(dest->sin_addr), address, INET_ADDRSTRLEN);
+    //const auto dest_port = ntohs(dest->sin_port);
+
+    //if (optType == SOCK_DGRAM)
+    //    spdlog::info("Binding UDP socket to {}:{}", addr, dest_port);
+    //else
+    //    spdlog::info("Binding TCP socket to {}:{}", addr, dest_port);
+
+	//
+	// Not of interest to intercept
+	// 
+    if (optType != SOCK_DGRAM || g_UdpRoutingMap.count(s))
+	    return real_bind(s, addr, namelen);
+
+    spdlog::info("Binding UDP socket, tracking socket handle");
+
+    SOCKET sTun = INVALID_SOCKET;
+	
+    do
     {
-        const struct sockaddr_in* dest = (const struct sockaddr_in*)addr;
+	    //
+	    // Create and bind temporary TCP socket for SOCKS5 handshake
+	    // 
 
-        char addr[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
-        const auto dest_port = ntohs(dest->sin_port);
+    	sTun = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
-        if (optType == SOCK_DGRAM)
-	        spdlog::info("Binding UDP socket to {}:{}", addr, dest_port);
+	    if (sTun == INVALID_SOCKET)
+	    {
+            spdlog::error("socket failed: {}", WSAGetLastError());
+            LogWSAError();
+		    break;
+	    }
+
+        SOCKADDR_IN tbAddr;
+        ZeroMemory(&tbAddr, sizeof(tbAddr));
+        tbAddr.sin_family = AF_INET;
+        tbAddr.sin_addr.s_addr = INADDR_ANY; // Any
+        tbAddr.sin_port = 0; // Any
+
+    	auto rc = real_bind(sTun, reinterpret_cast<SOCKADDR*>(&tbAddr), sizeof(tbAddr));
+    	
+        if (rc != 0) 
+        {
+            spdlog::error("bind failed: {}", WSAGetLastError());
+            LogWSAError();
+            break;
+        }
+
+        SOCKADDR_IN proxy;
+        proxy.sin_addr.s_addr = settings.proxy_address;
+        proxy.sin_family = AF_INET;
+        proxy.sin_port = settings.proxy_port;
+
+        rc = real_connect(sTun, reinterpret_cast<SOCKADDR*>(&proxy), sizeof(proxy));
+
+        if (rc != 0)
+        {
+            spdlog::error("connect failed: {}", WSAGetLastError());
+            LogWSAError();
+            break;
+        }
+
+	    //
+	    // Prepare greeting payload
+	    // 
+	    char greetProxy[3];
+	    greetProxy[0] = 0x05; // Version (always 0x05)
+	    greetProxy[1] = 0x01; // Number of authentication methods
+	    greetProxy[2] = 0x00; // NO AUTHENTICATION REQUIRED
+
+	    spdlog::info("[UDP] Sending greeting to proxy");
+
+	    if (send(sTun, greetProxy, sizeof(greetProxy), 0) != sizeof(greetProxy))
+	    {
+		    spdlog::error("[UDP] Proxy greeting failed");
+		    LogWSAError();
+		    break;
+	    }
+
+	    char response[2] = {0};
+
+	    if (recv(sTun, response, sizeof(response), 0)
+		    && response[0] == 0x05 /* expected version */
+		    && response[1] == 0x00 /* success value */)
+	    {
+		    spdlog::info("[UDP] Proxy accepted greeting without authentication");
+	    }
+	    else
+	    {
+		    spdlog::error("[UDP] Proxy greeting failed");
+		    LogWSAError();
+		    break;
+	    }
+
+        //
+        // Prepare remote connect request
+        // 
+        char udpAssociate[10];
+        udpAssociate[0] = 0x05; // Version (always 0x05)
+        udpAssociate[1] = 0x03; // UDP ASSOCIATE command
+        udpAssociate[2] = 0x00; // Reserved
+        udpAssociate[3] = 0x01; // Type (IP V4 address)
+    	//
+    	// TODO: this doesn't really matter, as Shadowsocks uses
+    	// the encapsulated UDP header to determine the real
+    	// remote endpoint to use.
+    	// 
+        udpAssociate[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
+        udpAssociate[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
+        udpAssociate[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
+        udpAssociate[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
+        udpAssociate[8] = (dest->sin_port >> 0) & 0xFF;
+        udpAssociate[9] = (dest->sin_port >> 8) & 0xFF;
+
+        spdlog::info("[UDP] Sending UDP ASSOCIATE to proxy");
+
+    	//
+    	// Request UDP relay endpoint
+    	// 
+        if (send(sTun, udpAssociate, sizeof(udpAssociate), 0) != sizeof(udpAssociate))
+        {
+            spdlog::error("[UDP] UDP ASSOCIATE failed");
+            LogWSAError();
+            break;
+        }
+
+        char udpAssociateResp[10] = { 0 };
+
+    	//
+    	// Parse response, contains endpoint
+    	// 
+        if (recv(sTun, udpAssociateResp, sizeof(udpAssociateResp), 0)
+            && response[1] == 0x00 /* success value */)
+        {
+        	//
+        	// This is the endpoint the UDP relay is listening on
+        	// 
+            SOCKADDR_IN udpEndpoint;
+            udpEndpoint.sin_addr.s_addr = (
+                udpAssociateResp[4] << 0 | 
+                udpAssociateResp[5] << 8 | 
+                udpAssociateResp[6] << 16 | 
+                udpAssociateResp[7] << 24
+                );
+            udpEndpoint.sin_port = (udpAssociateResp[8] << 0 | udpAssociateResp[9] << 8);
+
+            char address[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &(udpEndpoint.sin_addr), address, INET_ADDRSTRLEN);
+            const auto dest_port = ntohs(udpEndpoint.sin_port);
+
+            spdlog::info("[UDP] Received UDP relay endpoint {}:{} for socket {}", 
+                address, dest_port, s);
+
+            //
+	        // Keep track to start forwarding in my_WSASendTo
+	        // 
+            g_UdpRoutingMap.insert(std::pair<SOCKET, SOCKADDR_IN>(s, udpEndpoint));
+        }
         else
-            spdlog::info("Binding TCP socket to {}:{}", addr, dest_port);
+        {
+            spdlog::error("[UDP] UDP ASSOCIATE response failed");
+            LogWSAError();
+            break;
+        }
     }
+    while (FALSE);
+
+	//
+	// Not required anymore after we got the new endpoint
+	// 
+    if (sTun != INVALID_SOCKET)
+	    closesocket(sTun);
 	
     return real_bind(s, addr, namelen);
 }
@@ -498,7 +670,21 @@ int WINAPI my_WSASendTo(
     inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
     const auto dest_port = ntohs(dest->sin_port);
 
-    spdlog::info("Sending UDP packet to {}:{}", addr, dest_port);
+    do
+    {
+	    //
+	    // TCP tunnel through SOCKS5 exists for this socket
+	    // 
+	    if (!g_UdpRoutingMap.count(s))
+		    break;
+        
+	    SOCKADDR_IN sTun = g_UdpRoutingMap[s];
+
+
+    }
+    while (FALSE);
+	
+    spdlog::info("[UDP] Sending packet to {}:{}", addr, dest_port);
 	
     return real_WSASendTo(
         s,
@@ -526,9 +712,9 @@ int WINAPI my_WSARecvFrom(
 )
 {
 	if (lpOverlapped)
-		spdlog::info("my_WSARecvFrom called (OVERLAPPED)");
+		spdlog::debug("my_WSARecvFrom called (OVERLAPPED)");
     else
-        spdlog::info("my_WSARecvFrom called");
+        spdlog::debug("my_WSARecvFrom called");
 
     const struct sockaddr_in* dest = (const struct sockaddr_in*)lpFrom;
 
@@ -536,7 +722,7 @@ int WINAPI my_WSARecvFrom(
     inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
     const auto dest_port = ntohs(dest->sin_port);
 
-    spdlog::info("Received UDP packet from {}:{}", addr, dest_port);
+    spdlog::debug("Received UDP packet from {}:{}", addr, dest_port);
 	
     return real_WSARecvFrom(
         s,
