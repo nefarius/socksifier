@@ -616,7 +616,8 @@ int WINAPI my_bind(
                 udpAssociateResp[7] << 24
                 );
             udpEndpoint.sin_port = (udpAssociateResp[8] << 0 | udpAssociateResp[9] << 8);
-
+            udpEndpoint.sin_family = dest->sin_family;
+        	
             char address[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &(udpEndpoint.sin_addr), address, INET_ADDRSTRLEN);
             const auto dest_port = ntohs(udpEndpoint.sin_port);
@@ -647,6 +648,9 @@ int WINAPI my_bind(
     return real_bind(s, addr, namelen);
 }
 
+//
+// Intercepts https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/socket/udp_socket_win.cc#837
+// 
 int WINAPI my_WSASendTo(
     SOCKET                             s,
     LPWSABUF                           lpBuffers,
@@ -664,12 +668,8 @@ int WINAPI my_WSASendTo(
     else
         spdlog::info("my_WSASendTo called");
 
-    const struct sockaddr_in* dest = (const struct sockaddr_in*)lpTo;
-
-    char addr[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
-    const auto dest_port = ntohs(dest->sin_port);
-
+    PSOCKADDR_IN dest = (PSOCKADDR_IN)lpTo;
+	
     do
     {
 	    //
@@ -677,15 +677,57 @@ int WINAPI my_WSASendTo(
 	    // 
 	    if (!g_UdpRoutingMap.count(s))
 		    break;
-        
-	    SOCKADDR_IN sTun = g_UdpRoutingMap[s];
 
+	    PSOCKADDR_IN sTun = &g_UdpRoutingMap[s];
+	    WSABUF destBuffer;
+        DWORD num;
 
+    	//
+    	// Allocate new buffer with enough space to origin header
+    	// 
+	    destBuffer.len = lpBuffers->len + 10;
+	    destBuffer.buf = static_cast<PCHAR>(malloc(destBuffer.len));
+
+	    if (destBuffer.buf == nullptr)
+		    break;
+
+	    ZeroMemory(destBuffer.buf, destBuffer.len);
+
+	    destBuffer.buf[3] = 0x01; // IP V4 address
+	    destBuffer.buf[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
+	    destBuffer.buf[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
+	    destBuffer.buf[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
+	    destBuffer.buf[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
+	    destBuffer.buf[8] = (dest->sin_port >> 0) & 0xFF;
+	    destBuffer.buf[9] = (dest->sin_port >> 8) & 0xFF;
+
+	    memcpy(&destBuffer.buf[10], lpBuffers->buf, lpBuffers->len);
+
+	    dest->sin_addr = sTun->sin_addr;
+	    dest->sin_port = sTun->sin_port;
+
+        spdlog::info("[UDP] Sending packet to UDP relay");
+    	
+	    return real_WSASendTo(
+		    s,
+		    &destBuffer,
+		    1,
+		    &num,
+		    0,
+		    reinterpret_cast<const PSOCKADDR>(sTun),
+		    sizeof(*sTun),
+		    lpOverlapped,
+		    lpCompletionRoutine
+	    );
     }
-    while (FALSE);
-	
-    spdlog::info("[UDP] Sending packet to {}:{}", addr, dest_port);
-	
+    while (FALSE);    
+
+    char addr[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
+    const auto dest_port = ntohs(dest->sin_port);
+
+	spdlog::info("[UDP] Sending packet to {}:{}", addr, dest_port);
+    
     return real_WSASendTo(
         s,
         lpBuffers,
