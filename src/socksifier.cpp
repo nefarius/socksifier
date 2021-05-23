@@ -60,6 +60,10 @@ extern "C" {
         LPWSAOVERLAPPED                    lpOverlapped,
         LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
     ) = WSARecvFrom;
+
+    static int (WINAPI * real_closesocket)(
+        SOCKET s
+    ) = closesocket;
 	
     LPFN_CONNECTEX ConnectExPtr = NULL;
 
@@ -625,7 +629,7 @@ int WINAPI my_bind(
 	// Not required anymore after we got the new endpoint
 	// 
     if (sTun != INVALID_SOCKET)
-	    closesocket(sTun);
+	    real_closesocket(sTun);
 	
     return real_bind(s, addr, namelen);
 }
@@ -796,6 +800,25 @@ int WINAPI my_WSARecvFrom(
     } while (FALSE);
 
     return ret;
+}
+
+//
+// Hooks https://docs.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-closesocket
+// 
+int WINAPI my_closesocket(
+	SOCKET s
+)
+{
+	auto logger = spdlog::get("socksifier")->clone("socksifier.closesocket");
+
+	logger->info("my_closesocket called");
+
+	//
+	// Clean up invalidated handle
+	// 
+	g_UdpRoutingMap.erase(s);
+
+	return real_closesocket(s);
 }
 
 
@@ -1035,7 +1058,7 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 				//
 				// Close duplicate
 				// 
-				closesocket(targetSocket);
+				real_closesocket(targetSocket);
 
 				//
 				// Terminate original socket
