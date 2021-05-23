@@ -777,7 +777,7 @@ int WINAPI my_WSARecvFrom(
 
 		logger->debug("Relayed socket, stripping UDP header");
 
-#ifdef _DBG
+#ifdef _DEBUG
         const std::vector<char> aBuffer(lpBuffers->buf, lpBuffers->buf + *lpNumberOfBytesRecvd);
         logger->debug("({:04d}) -> {:Xpn}",
             *lpNumberOfBytesRecvd,
@@ -806,7 +806,7 @@ int WINAPI my_WSARecvFrom(
 		// 
 		memmove(lpBuffers->buf, &lpBuffers->buf[10], *lpNumberOfBytesRecvd -= 10);
 
-#ifdef _DBG
+#ifdef _DEBUG
         const std::vector<char> bBuffer(lpBuffers->buf, lpBuffers->buf + *lpNumberOfBytesRecvd);
         logger->debug("({:04d}) -> {:Xpn}",
             *lpNumberOfBytesRecvd,
@@ -1109,11 +1109,20 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 			// Observe best with https://github.com/CobaltFusion/DebugViewPP
 			// 
 			auto sink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
+#ifdef _DEBUG
 			sink->set_level(spdlog::level::debug);
+#else
+			sink->set_level(spdlog::level::info);
+#endif
 
 			auto logger = std::make_shared<spdlog::logger>("socksifier", sink);
 
+#ifdef _DEBUG
 			logger->set_level(spdlog::level::debug);
+#else
+			logger->set_level(spdlog::level::info);
+#endif
+
 			logger->flush_on(spdlog::level::info);
 
 			set_default_logger(logger);
