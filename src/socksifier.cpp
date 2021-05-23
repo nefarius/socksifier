@@ -900,7 +900,7 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
     auto logger = spdlog::get("socksifier")->clone("socksifier.SocketEnumMainThread");
 	auto pid = GetCurrentProcessId();
 
-    logger->info("Attempting to reap open connections for PID {}", pid);
+    logger->info("Attempting to reap open TCP connections for PID {}", pid);
 
 	WSAPROTOCOL_INFOW wsaProtocolInfo = {0};
 
