@@ -662,7 +662,7 @@ int WINAPI my_WSASendTo(
         DWORD num;
 
     	//
-    	// Allocate new buffer with enough space to origin header
+    	// Allocate new buffer with enough space for additional origin header
     	// 
 	    destBuffer.len = lpBuffers->len + 10;
 	    destBuffer.buf = static_cast<PCHAR>(malloc(destBuffer.len));
@@ -874,9 +874,10 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 {
 	UNREFERENCED_PARAMETER(Params);
 
+    auto logger = spdlog::get("socksifier")->clone("socksifier.SocketEnumMainThread");
 	auto pid = GetCurrentProcessId();
 
-    spdlog::info("Attempting to reap open connections for PID {}", pid);
+    logger->info("Attempting to reap open connections for PID {}", pid);
 
 	WSAPROTOCOL_INFOW wsaProtocolInfo = {0};
 
@@ -887,7 +888,7 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 
 	if (pNTQSI == nullptr)
 	{
-		spdlog::error("Failed to acquire NtQuerySystemInformation API");
+        logger->error("Failed to acquire NtQuerySystemInformation API");
 		return 1;
 	}
 
@@ -917,7 +918,7 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 
 	if (ntReturn != STATUS_SUCCESS)
 	{
-		spdlog::error("NtQuerySystemInformation failed with status {}", ntReturn);
+        logger->error("NtQuerySystemInformation failed with status {}", ntReturn);
 		return 1;
 	}
 
@@ -955,7 +956,31 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 
         delete objectName;
 		
-		spdlog::info("Found open socket, attempting duplication");
+        logger->info("Found open socket, identifying");
+
+        int optType = -1;
+        int optLen = sizeof(int);
+
+		//
+		// We need to know the socket type; don't terminate UDP
+		// 	
+		if (getsockopt(
+				reinterpret_cast<SOCKET>(handle),
+				SOL_SOCKET,
+				SO_TYPE,
+				reinterpret_cast<PCHAR>(&optType), &optLen) != 0
+		)
+		{
+            logger->warn("Failed to get socket type, moving on");
+			LogWSAError();
+			continue;
+		}
+
+		if (optType == SOCK_DGRAM)
+		{
+            logger->info("Handle belongs to UDP socket, skipping");
+			continue;
+		}
 
 		//
 		// Duplication is both a validity check and useful for logging
@@ -974,7 +999,7 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 			if (WSAGetLastError() == WSAENOTSOCK)
 				continue;
 
-			spdlog::warn("Couldn't duplicate, moving on");
+            logger->warn("Couldn't duplicate, moving on");
 			LogWSAError(); // For diagnostics, ignore otherwise
 			continue;
 		}
@@ -1005,7 +1030,7 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 				ZeroMemory(addr, ARRAYSIZE(addr));
 				inet_ntop(AF_INET, &(sockaddr.sin_addr), addr, INET_ADDRSTRLEN);
 
-				spdlog::info("Duplicated socket {}, closing", addr);
+                logger->info("Duplicated socket {}, closing", addr);
 
 				//
 				// Close duplicate
@@ -1085,14 +1110,14 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 		//
 		// Start socket enumeration in new thread
 		// 
-		/*CreateThread(
+		CreateThread(
 			nullptr,
 			0,
 			reinterpret_cast<LPTHREAD_START_ROUTINE>(SocketEnumMainThread),
 			nullptr,
 			0,
 			nullptr
-		);*/
+		);
 		
 		break;
 
