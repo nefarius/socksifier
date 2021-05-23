@@ -1,44 +1,22 @@
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <MSWSock.h>
-#include <Windows.h>
-#include "NtApi.h"
-
-#include <map>
+#include "socksifier.h"
 
 #include <detours/detours.h>
 
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/msvc_sink.h>
-#include <spdlog/fmt/bin_to_hex.h>
-
 #pragma comment(lib, "Ws2_32.lib")
 
+#pragma region Detoured function definitions
 
-typedef struct settings
-{
-	INT proxy_address;
-	USHORT proxy_port;
-} setting_t;
+EXTERN_C_START
 
-static setting_t settings;
+int (WINAPI* real_connect)(SOCKET s, const struct sockaddr* name, int namelen) = connect;
 
-static std::map<SOCKET, SOCKADDR_IN> g_UdpRoutingMap;
-
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-static int (WINAPI * real_connect)(SOCKET s, const struct sockaddr* name, int namelen) = connect;
-
-static int (WINAPI * real_bind)(
+int (WINAPI* real_bind)(
 	SOCKET s,
 	const sockaddr* addr,
 	int namelen
 ) = bind;
 
-static int (WINAPI * real_WSASendTo)(
+int (WINAPI* real_WSASendTo)(
 	SOCKET s,
 	LPWSABUF lpBuffers,
 	DWORD dwBufferCount,
@@ -50,7 +28,7 @@ static int (WINAPI * real_WSASendTo)(
 	LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
 ) = WSASendTo;
 
-static int (WINAPI * real_WSARecvFrom)(
+int (WINAPI* real_WSARecvFrom)(
 	SOCKET s,
 	LPWSABUF lpBuffers,
 	DWORD dwBufferCount,
@@ -62,225 +40,28 @@ static int (WINAPI * real_WSARecvFrom)(
 	LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
 ) = WSARecvFrom;
 
-static int (WINAPI * real_closesocket)(
+int (WINAPI* real_closesocket)(
 	SOCKET s
 ) = closesocket;
 
+EXTERN_C_END
+
+#pragma endregion
+
+#pragma region Global objects
+
+setting_t g_Settings;
+
+std::map<SOCKET, SOCKADDR_IN> g_UdpRoutingMap;
+
 LPFN_CONNECTEX ConnectExPtr = nullptr;
 
-#ifdef __cplusplus
-}
-#endif
+#pragma endregion
 
 
-/**
- * \fn  static inline void LogWSAError()
- *
- * \brief   Send friendly name of WSA error message to default log.
- *
- * \author  Benjamin Höglinger-Stelzer
- * \date    23.07.2019
- */
-static inline void LogWSAError()
-{
-	char* error = nullptr;
-	FormatMessageA(
-		FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-		nullptr,
-		WSAGetLastError(),
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-		(LPSTR)&error, 0, nullptr);
-	spdlog::error("Winsock error details: {} ({})", error, WSAGetLastError());
-	LocalFree(error);
-}
-
-/**
- * \fn  static inline BOOL BindAndConnectExSync( SOCKET s, const struct sockaddr * name, int namelen )
- *
- * \brief   Bind and connect a non-blocking socket synchronously.
- *
- * \author  Benjamin Höglinger-Stelzer
- * \date    23.07.2019
- *
- * \param   s       A SOCKET to process.
- * \param   name    The const struct sockaddr *.
- * \param   namelen The sizeof(const struct sockaddr).
- *
- * \returns True if it succeeds, false if it fails.
- */
-static inline BOOL BindAndConnectExSync(
-	SOCKET s,
-	const struct sockaddr* name,
-	int namelen
-)
-{
-	DWORD numBytes = 0, transfer = 0, flags = 0;
-	OVERLAPPED overlapped = {0};
-	overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-
-	/* ConnectEx requires the socket to be initially bound. */
-	{
-		struct sockaddr_in addr;
-		ZeroMemory(&addr, sizeof(addr));
-		addr.sin_family = AF_INET;
-		addr.sin_addr.s_addr = INADDR_ANY; // Any
-		addr.sin_port = 0; // Any
-		auto rc = bind(s, (SOCKADDR*)&addr, sizeof(addr));
-		if (rc != 0)
-		{
-			spdlog::error("bind failed: {}", WSAGetLastError());
-			LogWSAError();
-			return FALSE;
-		}
-	}
-
-	// 
-	// Call ConnectEx with overlapped I/O
-	// 
-	if (!ConnectExPtr(
-		s,
-		name,
-		namelen,
-		nullptr,
-		0,
-		&numBytes,
-		&overlapped
-	) && WSAGetLastError() != WSA_IO_PENDING)
-	{
-		spdlog::error("ConnectEx failed: {}", WSAGetLastError());
-		CloseHandle(overlapped.hEvent);
-		return FALSE;
-	}
-
-	//
-	// Wait for result
-	// 
-	const auto ret = WSAGetOverlappedResult(
-		s,
-		&overlapped,
-		&transfer,
-		TRUE,
-		&flags
-	);
-
-	CloseHandle(overlapped.hEvent);
-	return ret;
-}
-
-/**
- * \fn  static inline BOOL WSARecvSync( SOCKET s, PCHAR buffer, ULONG length )
- *
- * \brief   recv() in a blocking fashion.
- *
- * \author  Benjamin Höglinger-Stelzer
- * \date    23.07.2019
- *
- * \param   s       A SOCKET to process.
- * \param   buffer  The buffer.
- * \param   length  The length.
- *
- * \returns True if it succeeds, false if it fails.
- */
-static inline BOOL WSARecvSync(
-	SOCKET s,
-	PCHAR buffer,
-	ULONG length
-)
-{
-	DWORD flags = 0, transfer = 0, numBytes = 0;
-	WSABUF recvBuf;
-	OVERLAPPED overlapped = {0};
-	overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-
-	recvBuf.buf = buffer;
-	recvBuf.len = length;
-
-	if (WSARecv(s, &recvBuf, 1, &numBytes, &flags, &overlapped, nullptr) == SOCKET_ERROR)
-	{
-		if (WSAGetLastError() != WSA_IO_PENDING)
-		{
-			spdlog::error("WSARecv failed: {}", WSAGetLastError());
-			CloseHandle(overlapped.hEvent);
-			return FALSE;
-		}
-	}
-
-	const auto ret = WSAGetOverlappedResult(
-		s,
-		&overlapped,
-		&transfer,
-		TRUE,
-		&flags
-	);
-
-	CloseHandle(overlapped.hEvent);
-	return ret;
-}
-
-/**
- * \fn  static inline BOOL WSASendSync( SOCKET s, PCHAR buffer, ULONG length )
- *
- * \brief   send() in a blocking fashion.
- *
- * \author  Benjamin Höglinger-Stelzer
- * \date    23.07.2019
- *
- * \param   s       A SOCKET to process.
- * \param   buffer  The buffer.
- * \param   length  The length.
- *
- * \returns True if it succeeds, false if it fails.
- */
-static inline BOOL WSASendSync(
-	SOCKET s,
-	PCHAR buffer,
-	ULONG length
-)
-{
-	DWORD flags = 0, transfer = 0, numBytes = 0;
-	WSABUF sendBuf;
-	OVERLAPPED overlapped = {0};
-	overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-
-	sendBuf.buf = buffer;
-	sendBuf.len = length;
-
-	if (WSASend(s, &sendBuf, 1, &numBytes, 0, &overlapped, nullptr) == SOCKET_ERROR)
-	{
-		if (WSAGetLastError() != WSA_IO_PENDING)
-		{
-			spdlog::error("WSASend failed: {}", WSAGetLastError());
-			CloseHandle(overlapped.hEvent);
-			return FALSE;
-		}
-	}
-
-	const auto ret = WSAGetOverlappedResult(
-		s,
-		&overlapped,
-		&transfer,
-		TRUE,
-		&flags
-	);
-
-	CloseHandle(overlapped.hEvent);
-	return ret;
-}
-
-/**
- * \fn  int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
- *
- * \brief   Detoured connect function.
- *
- * \author  Benjamin Höglinger-Stelzer
- * \date    23.07.2019
- *
- * \param   s       A SOCKET to process.
- * \param   name    The name.
- * \param   namelen The namelen.
- *
- * \returns A WINAPI.
- */
+//
+// Hooks https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect
+// 
 int WINAPI my_connect(SOCKET s, const struct sockaddr* name, int namelen)
 {
 	auto logger = spdlog::get("socksifier")->clone("socksifier.connect");
@@ -342,9 +123,9 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr* name, int namelen)
 	logger->info("Original connect destination: {}:{}", addr, dest_port);
 
 	struct sockaddr_in proxy;
-	proxy.sin_addr.s_addr = settings.proxy_address;
+	proxy.sin_addr.s_addr = g_Settings.proxy_address;
 	proxy.sin_family = AF_INET;
-	proxy.sin_port = settings.proxy_port;
+	proxy.sin_port = g_Settings.proxy_port;
 
 	inet_ntop(AF_INET, &(proxy.sin_addr), addr, INET_ADDRSTRLEN);
 	logger->info("Connecting to SOCKS proxy: {}:{}", addr, ntohs(proxy.sin_port));
@@ -509,9 +290,9 @@ int WINAPI my_bind(
 		}
 
 		SOCKADDR_IN proxy;
-		proxy.sin_addr.s_addr = settings.proxy_address;
+		proxy.sin_addr.s_addr = g_Settings.proxy_address;
 		proxy.sin_family = AF_INET;
-		proxy.sin_port = settings.proxy_port;
+		proxy.sin_port = g_Settings.proxy_port;
 
 		rc = real_connect(sTun, reinterpret_cast<SOCKADDR*>(&proxy), sizeof(proxy));
 
@@ -639,7 +420,7 @@ int WINAPI my_bind(
 }
 
 //
-// Intercepts https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/socket/udp_socket_win.cc#837
+// Hooks https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-wsasendto
 // 
 int WINAPI my_WSASendTo(
 	SOCKET s,
@@ -734,7 +515,7 @@ int WINAPI my_WSASendTo(
 }
 
 //
-// Intercepts https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/socket/udp_socket_win.cc#778
+// Hooks https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-wsarecvfrom
 // 
 int WINAPI my_WSARecvFrom(
 	SOCKET s,
@@ -781,11 +562,11 @@ int WINAPI my_WSARecvFrom(
 		logger->debug("Relayed socket, stripping UDP header");
 
 #ifdef _DEBUG
-        const std::vector<char> aBuffer(lpBuffers->buf, lpBuffers->buf + *lpNumberOfBytesRecvd);
-        logger->debug("({:04d}) -> {:Xpn}",
-            *lpNumberOfBytesRecvd,
-            spdlog::to_hex(aBuffer)
-        );
+		const std::vector<char> aBuffer(lpBuffers->buf, lpBuffers->buf + *lpNumberOfBytesRecvd);
+		logger->debug("({:04d}) -> {:Xpn}",
+			*lpNumberOfBytesRecvd,
+			spdlog::to_hex(aBuffer)
+		);
 #endif
 
 		SOCKADDR_IN originEndpoint;
@@ -802,7 +583,7 @@ int WINAPI my_WSARecvFrom(
 		const auto originPort = ntohs(originEndpoint.sin_port);
 
 		logger->debug("Received UDP packet from origin endpoint {}:{}",
-		             originAddress, originPort);
+		              originAddress, originPort);
 
 		//
 		// Skip the UDP encapsulation header and adjust packet size
@@ -810,11 +591,11 @@ int WINAPI my_WSARecvFrom(
 		memmove(lpBuffers->buf, &lpBuffers->buf[10], *lpNumberOfBytesRecvd -= 10);
 
 #ifdef _DEBUG
-        const std::vector<char> bBuffer(lpBuffers->buf, lpBuffers->buf + *lpNumberOfBytesRecvd);
-        logger->debug("({:04d}) -> {:Xpn}",
-            *lpNumberOfBytesRecvd,
-            spdlog::to_hex(bBuffer)
-        );
+		const std::vector<char> bBuffer(lpBuffers->buf, lpBuffers->buf + *lpNumberOfBytesRecvd);
+		logger->debug("({:04d}) -> {:Xpn}",
+			*lpNumberOfBytesRecvd,
+			spdlog::to_hex(bBuffer)
+		);
 #endif
 	}
 	while (FALSE);
@@ -841,74 +622,6 @@ int WINAPI my_closesocket(
 	return real_closesocket(s);
 }
 
-
-LPWSTR GetObjectName(HANDLE hObject)
-{
-	LPWSTR lpwsReturn = nullptr;
-	const auto pNTQO = reinterpret_cast<tNtQueryObject>(GetProcAddress(
-		GetModuleHandle("NTDLL.DLL"),
-		"NtQueryObject"
-	));
-
-	if (pNTQO != nullptr)
-	{
-		DWORD dwSize = sizeof(OBJECT_NAME_INFORMATION);
-		POBJECT_NAME_INFORMATION pObjectInfo = (POBJECT_NAME_INFORMATION)new BYTE[dwSize];
-		NTSTATUS ntReturn = pNTQO(hObject, ObjectNameInformation, pObjectInfo, dwSize, &dwSize);
-
-		if (ntReturn == STATUS_BUFFER_OVERFLOW)
-		{
-			delete pObjectInfo;
-			pObjectInfo = (POBJECT_NAME_INFORMATION)new BYTE[dwSize];
-			ntReturn = pNTQO(hObject, ObjectNameInformation, pObjectInfo, dwSize, &dwSize);
-		}
-
-		if ((ntReturn >= STATUS_SUCCESS) && (pObjectInfo->Buffer != nullptr))
-		{
-			lpwsReturn = (LPWSTR)new BYTE[pObjectInfo->Length + sizeof(WCHAR)];
-			ZeroMemory(lpwsReturn, pObjectInfo->Length + sizeof(WCHAR));
-			CopyMemory(lpwsReturn, pObjectInfo->Buffer, pObjectInfo->Length);
-		}
-
-		delete pObjectInfo;
-	}
-
-	return lpwsReturn;
-}
-
-LPWSTR GetObjectTypeName(HANDLE hObject)
-{
-	LPWSTR lpwsReturn = nullptr;
-	const auto pNTQO = reinterpret_cast<tNtQueryObject>(GetProcAddress(
-		GetModuleHandle("NTDLL.DLL"),
-		"NtQueryObject"
-	));
-
-	if (pNTQO != nullptr)
-	{
-		DWORD dwSize = sizeof(PUBLIC_OBJECT_TYPE_INFORMATION);
-		PPUBLIC_OBJECT_TYPE_INFORMATION pObjectInfo = (PPUBLIC_OBJECT_TYPE_INFORMATION)new BYTE[dwSize];
-		NTSTATUS ntReturn = pNTQO(hObject, ObjectTypeInformation, pObjectInfo, dwSize, &dwSize);
-
-		if (ntReturn == STATUS_BUFFER_OVERFLOW || ntReturn == STATUS_INFO_LENGTH_MISMATCH)
-		{
-			delete pObjectInfo;
-			pObjectInfo = (PPUBLIC_OBJECT_TYPE_INFORMATION)new BYTE[dwSize];
-			ntReturn = pNTQO(hObject, ObjectTypeInformation, pObjectInfo, dwSize, &dwSize);
-		}
-
-		if ((ntReturn >= STATUS_SUCCESS) && (pObjectInfo->TypeName.Buffer != nullptr))
-		{
-			lpwsReturn = (LPWSTR)new BYTE[pObjectInfo->TypeName.Length + sizeof(WCHAR)];
-			ZeroMemory(lpwsReturn, pObjectInfo->TypeName.Length + sizeof(WCHAR));
-			CopyMemory(lpwsReturn, pObjectInfo->TypeName.Buffer, pObjectInfo->TypeName.Length);
-		}
-
-		delete pObjectInfo;
-	}
-
-	return lpwsReturn;
-}
 
 //
 // Finds and kills existing TCP connections within this process
@@ -1095,7 +808,9 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 	return 0;
 }
 
-
+//
+// Main DLL entry point
+// 
 BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 {
 	if (DetourIsHelperProcess())
@@ -1142,8 +857,8 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 			GetEnvironmentVariableA("SOCKSIFIER_ADDRESS", addressVar, ARRAYSIZE(addressVar));
 			GetEnvironmentVariableA("SOCKSIFIER_PORT", portVar, ARRAYSIZE(portVar));
 
-			inet_pton(AF_INET, addressVar, &settings.proxy_address);
-			settings.proxy_port = _byteswap_ushort(static_cast<USHORT>(strtol(portVar, nullptr, 10)));
+			inet_pton(AF_INET, addressVar, &g_Settings.proxy_address);
+			g_Settings.proxy_port = _byteswap_ushort(static_cast<USHORT>(strtol(portVar, nullptr, 10)));
 
 			spdlog::info("Using SOCKS proxy: {}:{}", addressVar, portVar);
 		}

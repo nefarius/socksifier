@@ -18,12 +18,27 @@
     <ClCompile Include="socksifier.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="WsaUtil.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NtUtil.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="NtApi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="socksifier.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WsaUtil.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="NtUtil.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

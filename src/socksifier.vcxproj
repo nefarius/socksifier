@@ -134,11 +134,16 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="NtUtil.cpp" />
     <ClCompile Include="socksifier.cpp" />
+    <ClCompile Include="WsaUtil.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="NtApi.h" />
+    <ClInclude Include="NtUtil.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="socksifier.h" />
+    <ClInclude Include="WsaUtil.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="socksifier.rc" />
