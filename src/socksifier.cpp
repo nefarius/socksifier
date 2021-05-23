@@ -750,6 +750,9 @@ int WINAPI my_WSARecvFrom(
 
     logger->debug("Received UDP packet from {}:{}", addr, dest_port);
 
+	//
+	// TODO: better error checking, works with CEF (as of now)
+	// 
     const auto ret = real_WSARecvFrom(
         s,
         lpBuffers,
@@ -767,7 +770,7 @@ int WINAPI my_WSARecvFrom(
         if (!g_UdpRoutingMap.count(s))
             break;
                 
-        logger->info("Relayed socket, stripping UDP header");
+        logger->debug("Relayed socket, stripping UDP header");
 
 #ifdef _DBG
         const std::vector<char> aBuffer(lpBuffers->buf, lpBuffers->buf + *lpNumberOfBytesRecvd);
@@ -776,7 +779,10 @@ int WINAPI my_WSARecvFrom(
             spdlog::to_hex(aBuffer)
         );
 #endif
-        
+
+    	//
+    	// Skip the UDP encapsulation header and adjust packet size
+    	// 
         memmove(lpBuffers->buf, &lpBuffers->buf[10], *lpNumberOfBytesRecvd -= 10);
 
 #ifdef _DBG
