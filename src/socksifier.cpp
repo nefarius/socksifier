@@ -1128,6 +1128,7 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
         DetourAttach(&static_cast<PVOID>(real_bind), my_bind);
         DetourAttach(&static_cast<PVOID>(real_WSASendTo), my_WSASendTo);
         DetourAttach(&static_cast<PVOID>(real_WSARecvFrom), my_WSARecvFrom);
+        DetourAttach(&static_cast<PVOID>(real_closesocket), my_closesocket);
 		DetourTransactionCommit();
 
 		//
@@ -1151,6 +1152,7 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
         DetourDetach(&static_cast<PVOID>(real_bind), my_bind);
         DetourDetach(&static_cast<PVOID>(real_WSASendTo), my_WSASendTo);
         DetourDetach(&static_cast<PVOID>(real_WSARecvFrom), my_WSARecvFrom);
+        DetourDetach(&static_cast<PVOID>(real_closesocket), my_closesocket);
 		DetourTransactionCommit();
 		break;
 	}
