@@ -811,7 +811,7 @@ int WINAPI my_closesocket(
 {
 	auto logger = spdlog::get("socksifier")->clone("socksifier.closesocket");
 
-	logger->info("my_closesocket called");
+	logger->debug("my_closesocket called");
 
 	//
 	// Clean up invalidated handle
