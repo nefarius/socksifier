@@ -15,9 +15,10 @@
 #pragma comment(lib, "Ws2_32.lib")
 
 
-typedef struct settings {
-    INT proxy_address;
-    USHORT  proxy_port;
+typedef struct settings
+{
+	INT proxy_address;
+	USHORT proxy_port;
 } setting_t;
 
 static setting_t settings;
@@ -29,43 +30,43 @@ static std::map<SOCKET, SOCKADDR_IN> g_UdpRoutingMap;
 extern "C" {
 #endif
 
-    static int (WINAPI * real_connect)(SOCKET s, const struct sockaddr * name, int namelen) = connect;
+static int (WINAPI * real_connect)(SOCKET s, const struct sockaddr* name, int namelen) = connect;
 
-    static int (WINAPI * real_bind)(
-        SOCKET         s,
-        const sockaddr* addr,
-        int            namelen
-    ) = bind;
+static int (WINAPI * real_bind)(
+	SOCKET s,
+	const sockaddr* addr,
+	int namelen
+) = bind;
 
-    static int (WINAPI * real_WSASendTo)(
-        SOCKET                             s,
-        LPWSABUF                           lpBuffers,
-        DWORD                              dwBufferCount,
-        LPDWORD                            lpNumberOfBytesSent,
-        DWORD                              dwFlags,
-        const sockaddr* lpTo,
-        int                                iTolen,
-        LPWSAOVERLAPPED                    lpOverlapped,
-        LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
-    ) = WSASendTo;
+static int (WINAPI * real_WSASendTo)(
+	SOCKET s,
+	LPWSABUF lpBuffers,
+	DWORD dwBufferCount,
+	LPDWORD lpNumberOfBytesSent,
+	DWORD dwFlags,
+	const sockaddr* lpTo,
+	int iTolen,
+	LPWSAOVERLAPPED lpOverlapped,
+	LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
+) = WSASendTo;
 
-    static int (WINAPI * real_WSARecvFrom)(
-        SOCKET                             s,
-        LPWSABUF                           lpBuffers,
-        DWORD                              dwBufferCount,
-        LPDWORD                            lpNumberOfBytesRecvd,
-        LPDWORD                            lpFlags,
-        sockaddr* lpFrom,
-        LPINT                              lpFromlen,
-        LPWSAOVERLAPPED                    lpOverlapped,
-        LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
-    ) = WSARecvFrom;
+static int (WINAPI * real_WSARecvFrom)(
+	SOCKET s,
+	LPWSABUF lpBuffers,
+	DWORD dwBufferCount,
+	LPDWORD lpNumberOfBytesRecvd,
+	LPDWORD lpFlags,
+	sockaddr* lpFrom,
+	LPINT lpFromlen,
+	LPWSAOVERLAPPED lpOverlapped,
+	LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
+) = WSARecvFrom;
 
-    static int (WINAPI * real_closesocket)(
-        SOCKET s
-    ) = closesocket;
-	
-    LPFN_CONNECTEX ConnectExPtr = NULL;
+static int (WINAPI * real_closesocket)(
+	SOCKET s
+) = closesocket;
+
+LPFN_CONNECTEX ConnectExPtr = nullptr;
 
 #ifdef __cplusplus
 }
@@ -82,15 +83,15 @@ extern "C" {
  */
 static inline void LogWSAError()
 {
-    char *error = NULL;
-    FormatMessageA(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        NULL,
-        WSAGetLastError(),
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPSTR)&error, 0, NULL);
-    spdlog::error("Winsock error details: {} ({})", error, WSAGetLastError());
-    LocalFree(error);
+	char* error = nullptr;
+	FormatMessageA(
+		FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+		nullptr,
+		WSAGetLastError(),
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+		(LPSTR)&error, 0, nullptr);
+	spdlog::error("Winsock error details: {} ({})", error, WSAGetLastError());
+	LocalFree(error);
 }
 
 /**
@@ -108,61 +109,62 @@ static inline void LogWSAError()
  * \returns True if it succeeds, false if it fails.
  */
 static inline BOOL BindAndConnectExSync(
-    SOCKET s,
-    const struct sockaddr * name,
-    int namelen
+	SOCKET s,
+	const struct sockaddr* name,
+	int namelen
 )
 {
-    DWORD numBytes = 0, transfer = 0, flags = 0;
-    OVERLAPPED overlapped = { 0 };
-    overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+	DWORD numBytes = 0, transfer = 0, flags = 0;
+	OVERLAPPED overlapped = {0};
+	overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
-    /* ConnectEx requires the socket to be initially bound. */
-    {
-        struct sockaddr_in addr;
-        ZeroMemory(&addr, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = INADDR_ANY; // Any
-        addr.sin_port = 0; // Any
-        auto rc = bind(s, (SOCKADDR*)&addr, sizeof(addr));
-        if (rc != 0) {
-            spdlog::error("bind failed: {}", WSAGetLastError());
-            LogWSAError();
-            return FALSE;
-        }
-    }
+	/* ConnectEx requires the socket to be initially bound. */
+	{
+		struct sockaddr_in addr;
+		ZeroMemory(&addr, sizeof(addr));
+		addr.sin_family = AF_INET;
+		addr.sin_addr.s_addr = INADDR_ANY; // Any
+		addr.sin_port = 0; // Any
+		auto rc = bind(s, (SOCKADDR*)&addr, sizeof(addr));
+		if (rc != 0)
+		{
+			spdlog::error("bind failed: {}", WSAGetLastError());
+			LogWSAError();
+			return FALSE;
+		}
+	}
 
-    // 
-    // Call ConnectEx with overlapped I/O
-    // 
-    if (!ConnectExPtr(
-        s,
-        name,
-        namelen,
-        NULL,
-        0,
-        &numBytes,
-        &overlapped
-    ) && WSAGetLastError() != WSA_IO_PENDING)
-    {
-        spdlog::error("ConnectEx failed: {}", WSAGetLastError());
-        CloseHandle(overlapped.hEvent);
-        return FALSE;
-    }
+	// 
+	// Call ConnectEx with overlapped I/O
+	// 
+	if (!ConnectExPtr(
+		s,
+		name,
+		namelen,
+		nullptr,
+		0,
+		&numBytes,
+		&overlapped
+	) && WSAGetLastError() != WSA_IO_PENDING)
+	{
+		spdlog::error("ConnectEx failed: {}", WSAGetLastError());
+		CloseHandle(overlapped.hEvent);
+		return FALSE;
+	}
 
-    //
-    // Wait for result
-    // 
-    const auto ret = WSAGetOverlappedResult(
-        s,
-        &overlapped,
-        &transfer,
-        TRUE,
-        &flags
-    );
+	//
+	// Wait for result
+	// 
+	const auto ret = WSAGetOverlappedResult(
+		s,
+		&overlapped,
+		&transfer,
+		TRUE,
+		&flags
+	);
 
-    CloseHandle(overlapped.hEvent);
-    return ret;
+	CloseHandle(overlapped.hEvent);
+	return ret;
 }
 
 /**
@@ -180,39 +182,39 @@ static inline BOOL BindAndConnectExSync(
  * \returns True if it succeeds, false if it fails.
  */
 static inline BOOL WSARecvSync(
-    SOCKET s,
-    PCHAR buffer,
-    ULONG length
+	SOCKET s,
+	PCHAR buffer,
+	ULONG length
 )
 {
-    DWORD flags = 0, transfer = 0, numBytes = 0;
-    WSABUF recvBuf;
-    OVERLAPPED overlapped = { 0 };
-    overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+	DWORD flags = 0, transfer = 0, numBytes = 0;
+	WSABUF recvBuf;
+	OVERLAPPED overlapped = {0};
+	overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
-    recvBuf.buf = buffer;
-    recvBuf.len = length;
+	recvBuf.buf = buffer;
+	recvBuf.len = length;
 
-    if (WSARecv(s, &recvBuf, 1, &numBytes, &flags, &overlapped, NULL) == SOCKET_ERROR)
-    {
-        if (WSAGetLastError() != WSA_IO_PENDING)
-        {
-            spdlog::error("WSARecv failed: {}", WSAGetLastError());
-            CloseHandle(overlapped.hEvent);
-            return FALSE;
-        }
-    }
+	if (WSARecv(s, &recvBuf, 1, &numBytes, &flags, &overlapped, nullptr) == SOCKET_ERROR)
+	{
+		if (WSAGetLastError() != WSA_IO_PENDING)
+		{
+			spdlog::error("WSARecv failed: {}", WSAGetLastError());
+			CloseHandle(overlapped.hEvent);
+			return FALSE;
+		}
+	}
 
-    const auto ret = WSAGetOverlappedResult(
-        s,
-        &overlapped,
-        &transfer,
-        TRUE,
-        &flags
-    );
+	const auto ret = WSAGetOverlappedResult(
+		s,
+		&overlapped,
+		&transfer,
+		TRUE,
+		&flags
+	);
 
-    CloseHandle(overlapped.hEvent);
-    return ret;
+	CloseHandle(overlapped.hEvent);
+	return ret;
 }
 
 /**
@@ -230,40 +232,39 @@ static inline BOOL WSARecvSync(
  * \returns True if it succeeds, false if it fails.
  */
 static inline BOOL WSASendSync(
-    SOCKET s,
-    PCHAR buffer,
-    ULONG length
+	SOCKET s,
+	PCHAR buffer,
+	ULONG length
 )
 {
-    DWORD flags = 0, transfer = 0, numBytes = 0;
-    WSABUF sendBuf;
-    OVERLAPPED overlapped = { 0 };
-    overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+	DWORD flags = 0, transfer = 0, numBytes = 0;
+	WSABUF sendBuf;
+	OVERLAPPED overlapped = {0};
+	overlapped.hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
-    sendBuf.buf = buffer;
-    sendBuf.len = length;
+	sendBuf.buf = buffer;
+	sendBuf.len = length;
 
-    if (WSASend(s, &sendBuf, 1, &numBytes, 0, &overlapped, NULL) == SOCKET_ERROR)
-    {
-        if (WSAGetLastError() != WSA_IO_PENDING)
-        {
-            spdlog::error("WSASend failed: {}", WSAGetLastError());
-            CloseHandle(overlapped.hEvent);
-            return FALSE;
-        }
+	if (WSASend(s, &sendBuf, 1, &numBytes, 0, &overlapped, nullptr) == SOCKET_ERROR)
+	{
+		if (WSAGetLastError() != WSA_IO_PENDING)
+		{
+			spdlog::error("WSASend failed: {}", WSAGetLastError());
+			CloseHandle(overlapped.hEvent);
+			return FALSE;
+		}
+	}
 
-    }
+	const auto ret = WSAGetOverlappedResult(
+		s,
+		&overlapped,
+		&transfer,
+		TRUE,
+		&flags
+	);
 
-    const auto ret = WSAGetOverlappedResult(
-        s,
-        &overlapped,
-        &transfer,
-        TRUE,
-        &flags
-    );
-
-    CloseHandle(overlapped.hEvent);
-    return ret;
+	CloseHandle(overlapped.hEvent);
+	return ret;
 }
 
 /**
@@ -280,501 +281,501 @@ static inline BOOL WSASendSync(
  *
  * \returns A WINAPI.
  */
-int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
+int WINAPI my_connect(SOCKET s, const struct sockaddr* name, int namelen)
 {
-    auto logger = spdlog::get("socksifier")->clone("socksifier.connect");
-	
-    logger->debug("my_connect called");
+	auto logger = spdlog::get("socksifier")->clone("socksifier.connect");
 
-    //
-    // One-time initialization
-    // 
-    static std::once_flag flag;
-    std::call_once(flag, [&sock = s]()
-    {
-        auto logger = spdlog::get("socksifier")->clone("socksifier.connect");
-        logger->info("Requesting pointer to ConnectEx()");
+	logger->debug("my_connect called");
 
-        DWORD numBytes = 0;
-        GUID guid = WSAID_CONNECTEX;
+	//
+	// One-time initialization
+	// 
+	static std::once_flag flag;
+	std::call_once(flag, [&sock = s]()
+	{
+		auto logger = spdlog::get("socksifier")->clone("socksifier.connect");
+		logger->info("Requesting pointer to ConnectEx()");
 
-        //
-        // Request ConnectEx function pointer
-        // 
-        const auto ret = WSAIoctl(
-            sock,
-            SIO_GET_EXTENSION_FUNCTION_POINTER,
-            (void*)&guid,
-            sizeof(guid),
-            (void*)&ConnectExPtr,
-            sizeof(ConnectExPtr),
-            &numBytes,
-            NULL,
-            NULL
-        );
+		DWORD numBytes = 0;
+		GUID guid = WSAID_CONNECTEX;
 
-        if (!ret)
-        {
-            logger->info("ConnectEx() pointer acquired");
-        }
-        else
-        {
-            logger->error("Failed to retrieve ConnectEx() pointer, error: {}", WSAGetLastError());
-            ConnectExPtr = NULL;
-        }
-    });
+		//
+		// Request ConnectEx function pointer
+		// 
+		const auto ret = WSAIoctl(
+			sock,
+			SIO_GET_EXTENSION_FUNCTION_POINTER,
+			static_cast<void*>(&guid),
+			sizeof(guid),
+			static_cast<void*>(&ConnectExPtr),
+			sizeof(ConnectExPtr),
+			&numBytes,
+			nullptr,
+			nullptr
+		);
 
-    const struct sockaddr_in * dest = (const struct sockaddr_in *)name;
+		if (!ret)
+		{
+			logger->info("ConnectEx() pointer acquired");
+		}
+		else
+		{
+			logger->error("Failed to retrieve ConnectEx() pointer, error: {}", WSAGetLastError());
+			ConnectExPtr = nullptr;
+		}
+	});
 
-    char addr[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
-    const auto dest_port = ntohs(dest->sin_port);
+	const struct sockaddr_in* dest = (const struct sockaddr_in*)name;
 
-    //
-    // These destinations we don't usually wanna proxy
-    // 
-    if (ConnectExPtr == NULL || !strcmp(addr, "127.0.0.1") || !strcmp(addr, "0.0.0.0"))
-    {
-        return real_connect(s, name, namelen);
-    }
+	char addr[INET_ADDRSTRLEN];
+	inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
+	const auto dest_port = ntohs(dest->sin_port);
 
-    logger->info("Original connect destination: {}:{}", addr, dest_port);
+	//
+	// These destinations we don't usually wanna proxy
+	// 
+	if (ConnectExPtr == nullptr || !strcmp(addr, "127.0.0.1") || !strcmp(addr, "0.0.0.0"))
+	{
+		return real_connect(s, name, namelen);
+	}
 
-    struct sockaddr_in proxy;
-    proxy.sin_addr.s_addr = settings.proxy_address;
-    proxy.sin_family = AF_INET;
-    proxy.sin_port = settings.proxy_port;
+	logger->info("Original connect destination: {}:{}", addr, dest_port);
 
-    inet_ntop(AF_INET, &(proxy.sin_addr), addr, INET_ADDRSTRLEN);
-    logger->info("Connecting to SOCKS proxy: {}:{}", addr, ntohs(proxy.sin_port));
+	struct sockaddr_in proxy;
+	proxy.sin_addr.s_addr = settings.proxy_address;
+	proxy.sin_family = AF_INET;
+	proxy.sin_port = settings.proxy_port;
 
-    //
-    // This handles non-blocking socket connections via extended Winsock API
-    // 
-    if (BindAndConnectExSync(
-        s,
-        reinterpret_cast<SOCKADDR *>(&proxy),
-        sizeof(proxy)
-    ))
-    {
-        logger->info("Proxy connection established");
-    }
-    else
-    {
-        logger->error("Proxy connection failed");
-        LogWSAError();
-        return SOCKET_ERROR;
-    }
+	inet_ntop(AF_INET, &(proxy.sin_addr), addr, INET_ADDRSTRLEN);
+	logger->info("Connecting to SOCKS proxy: {}:{}", addr, ntohs(proxy.sin_port));
 
-    //
-    // Prepare greeting payload
-    // 
-    char greetProxy[3];
-    greetProxy[0] = 0x05; // Version (always 0x05)
-    greetProxy[1] = 0x01; // Number of authentication methods
-    greetProxy[2] = 0x00; // NO AUTHENTICATION REQUIRED
+	//
+	// This handles non-blocking socket connections via extended Winsock API
+	// 
+	if (BindAndConnectExSync(
+		s,
+		reinterpret_cast<SOCKADDR*>(&proxy),
+		sizeof(proxy)
+	))
+	{
+		logger->info("Proxy connection established");
+	}
+	else
+	{
+		logger->error("Proxy connection failed");
+		LogWSAError();
+		return SOCKET_ERROR;
+	}
 
-    logger->info("Sending greeting to proxy");
+	//
+	// Prepare greeting payload
+	// 
+	char greetProxy[3];
+	greetProxy[0] = 0x05; // Version (always 0x05)
+	greetProxy[1] = 0x01; // Number of authentication methods
+	greetProxy[2] = 0x00; // NO AUTHENTICATION REQUIRED
 
-    if (WSASendSync(s, greetProxy, sizeof(greetProxy)))
-    {
-        char response[2] = { 0 };
+	logger->info("Sending greeting to proxy");
 
-        if (WSARecvSync(s, response, sizeof(response))
-            && response[0] == 0x05 /* expected version */
-            && response[1] == 0x00 /* success value */)
-        {
-            logger->info("Proxy accepted greeting without authentication");
-        }
-        else
-        {
-            logger->error("Proxy greeting failed");
-            LogWSAError();
-            return SOCKET_ERROR;
-        }
-    }
-    else
-    {
-        logger->error("Failed to greet SOCKS proxy server");
-        LogWSAError();
-        return SOCKET_ERROR;
-    }
+	if (WSASendSync(s, greetProxy, sizeof(greetProxy)))
+	{
+		char response[2] = {0};
 
-    //
-    // Prepare remote connect request
-    // 
-    char remoteBind[10];
-    remoteBind[0] = 0x05; // Version (always 0x05)
-    remoteBind[1] = 0x01; // Connect command
-    remoteBind[2] = 0x00; // Reserved
-    remoteBind[3] = 0x01; // Type (IP V4 address)
-    remoteBind[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
-    remoteBind[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
-    remoteBind[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
-    remoteBind[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
-    remoteBind[8] = (dest->sin_port >> 0) & 0xFF;
-    remoteBind[9] = (dest->sin_port >> 8) & 0xFF;
+		if (WSARecvSync(s, response, sizeof(response))
+			&& response[0] == 0x05 /* expected version */
+			&& response[1] == 0x00 /* success value */)
+		{
+			logger->info("Proxy accepted greeting without authentication");
+		}
+		else
+		{
+			logger->error("Proxy greeting failed");
+			LogWSAError();
+			return SOCKET_ERROR;
+		}
+	}
+	else
+	{
+		logger->error("Failed to greet SOCKS proxy server");
+		LogWSAError();
+		return SOCKET_ERROR;
+	}
 
-    logger->info("Sending connect request to proxy");
+	//
+	// Prepare remote connect request
+	// 
+	char remoteBind[10];
+	remoteBind[0] = 0x05; // Version (always 0x05)
+	remoteBind[1] = 0x01; // Connect command
+	remoteBind[2] = 0x00; // Reserved
+	remoteBind[3] = 0x01; // Type (IP V4 address)
+	remoteBind[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
+	remoteBind[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
+	remoteBind[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
+	remoteBind[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
+	remoteBind[8] = (dest->sin_port >> 0) & 0xFF;
+	remoteBind[9] = (dest->sin_port >> 8) & 0xFF;
 
-    if (WSASendSync(s, remoteBind, sizeof(remoteBind)))
-    {
-        char response[10] = { 0 };
+	logger->info("Sending connect request to proxy");
 
-        if (WSARecvSync(s, response, sizeof(response))
-            && response[1] == 0x00 /* success value */)
-        {
-            logger->info("Remote connection established");
-        }
-        else
-        {
-            logger->error("Consuming proxy response failed");
-            LogWSAError();
-            return SOCKET_ERROR;
-        }
-    }
-    else
-    {
-        logger->error("Failed to instruct proxy to remote connect");
-        LogWSAError();
-        return SOCKET_ERROR;
-    }
+	if (WSASendSync(s, remoteBind, sizeof(remoteBind)))
+	{
+		char response[10] = {0};
 
-    return ERROR_SUCCESS;
+		if (WSARecvSync(s, response, sizeof(response))
+			&& response[1] == 0x00 /* success value */)
+		{
+			logger->info("Remote connection established");
+		}
+		else
+		{
+			logger->error("Consuming proxy response failed");
+			LogWSAError();
+			return SOCKET_ERROR;
+		}
+	}
+	else
+	{
+		logger->error("Failed to instruct proxy to remote connect");
+		LogWSAError();
+		return SOCKET_ERROR;
+	}
+
+	return ERROR_SUCCESS;
 }
 
 int WINAPI my_bind(
-    SOCKET         s,
-    const sockaddr* addr,
-    int            namelen
+	SOCKET s,
+	const sockaddr* addr,
+	int namelen
 )
 {
-    auto logger = spdlog::get("socksifier")->clone("socksifier.bind");
-	
-    logger->debug("my_bind called ({})", s);
+	auto logger = spdlog::get("socksifier")->clone("socksifier.bind");
 
-    int optType = -1;
-    int optLen = sizeof(int);
+	logger->debug("my_bind called ({})", s);
+
+	int optType = -1;
+	int optLen = sizeof(int);
 
 	//
 	// We need to know the socket type
 	// 	
-    if (getsockopt(s, SOL_SOCKET, SO_TYPE, reinterpret_cast<PCHAR>(&optType), &optLen) != 0)
-        return real_bind(s, addr, namelen);
-        
-    const struct sockaddr_in* dest = (const struct sockaddr_in*)addr;
+	if (getsockopt(s, SOL_SOCKET, SO_TYPE, reinterpret_cast<PCHAR>(&optType), &optLen) != 0)
+		return real_bind(s, addr, namelen);
+
+	const struct sockaddr_in* dest = (const struct sockaddr_in*)addr;
 
 	//
 	// Not of interest to intercept
 	// 
-    if (optType != SOCK_DGRAM || g_UdpRoutingMap.count(s))
-	    return real_bind(s, addr, namelen);
+	if (optType != SOCK_DGRAM || g_UdpRoutingMap.count(s))
+		return real_bind(s, addr, namelen);
 
-    logger->info("Binding UDP socket, tracking socket handle");
+	logger->info("Binding UDP socket, tracking socket handle");
 
-    SOCKET sTun = INVALID_SOCKET;
-	
-    do
-    {
-	    //
-	    // Create and bind temporary TCP socket for SOCKS5 handshake
-	    // 
+	SOCKET sTun = INVALID_SOCKET;
 
-    	sTun = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	do
+	{
+		//
+		// Create and bind temporary TCP socket for SOCKS5 handshake
+		// 
 
-	    if (sTun == INVALID_SOCKET)
-	    {
-            logger->error("socket failed: {}", WSAGetLastError());
-            LogWSAError();
-		    break;
-	    }
+		sTun = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
-        SOCKADDR_IN tbAddr;
-        ZeroMemory(&tbAddr, sizeof(tbAddr));
-        tbAddr.sin_family = AF_INET;
-        tbAddr.sin_addr.s_addr = INADDR_ANY; // Any
-        tbAddr.sin_port = 0; // Any
+		if (sTun == INVALID_SOCKET)
+		{
+			logger->error("socket failed: {}", WSAGetLastError());
+			LogWSAError();
+			break;
+		}
 
-    	auto rc = real_bind(sTun, reinterpret_cast<SOCKADDR*>(&tbAddr), sizeof(tbAddr));
-    	
-        if (rc != 0) 
-        {
-            logger->error("bind failed: {}", WSAGetLastError());
-            LogWSAError();
-            break;
-        }
+		SOCKADDR_IN tbAddr;
+		ZeroMemory(&tbAddr, sizeof(tbAddr));
+		tbAddr.sin_family = AF_INET;
+		tbAddr.sin_addr.s_addr = INADDR_ANY; // Any
+		tbAddr.sin_port = 0; // Any
 
-        SOCKADDR_IN proxy;
-        proxy.sin_addr.s_addr = settings.proxy_address;
-        proxy.sin_family = AF_INET;
-        proxy.sin_port = settings.proxy_port;
+		auto rc = real_bind(sTun, reinterpret_cast<SOCKADDR*>(&tbAddr), sizeof(tbAddr));
 
-        rc = real_connect(sTun, reinterpret_cast<SOCKADDR*>(&proxy), sizeof(proxy));
+		if (rc != 0)
+		{
+			logger->error("bind failed: {}", WSAGetLastError());
+			LogWSAError();
+			break;
+		}
 
-        if (rc != 0)
-        {
-            logger->error("connect failed: {}", WSAGetLastError());
-            LogWSAError();
-            break;
-        }
+		SOCKADDR_IN proxy;
+		proxy.sin_addr.s_addr = settings.proxy_address;
+		proxy.sin_family = AF_INET;
+		proxy.sin_port = settings.proxy_port;
 
-	    //
-	    // Prepare greeting payload
-	    // 
-	    char greetProxy[3];
-	    greetProxy[0] = 0x05; // Version (always 0x05)
-	    greetProxy[1] = 0x01; // Number of authentication methods
-	    greetProxy[2] = 0x00; // NO AUTHENTICATION REQUIRED
+		rc = real_connect(sTun, reinterpret_cast<SOCKADDR*>(&proxy), sizeof(proxy));
 
-        logger->info("Sending greeting to proxy");
+		if (rc != 0)
+		{
+			logger->error("connect failed: {}", WSAGetLastError());
+			LogWSAError();
+			break;
+		}
 
-	    if (send(sTun, greetProxy, sizeof(greetProxy), 0) != sizeof(greetProxy))
-	    {
-            logger->error("Proxy greeting failed");
-		    LogWSAError();
-		    break;
-	    }
+		//
+		// Prepare greeting payload
+		// 
+		char greetProxy[3];
+		greetProxy[0] = 0x05; // Version (always 0x05)
+		greetProxy[1] = 0x01; // Number of authentication methods
+		greetProxy[2] = 0x00; // NO AUTHENTICATION REQUIRED
 
-	    char response[2] = {0};
+		logger->info("Sending greeting to proxy");
 
-	    if (recv(sTun, response, sizeof(response), 0)
-		    && response[0] == 0x05 /* expected version */
-		    && response[1] == 0x00 /* success value */)
-	    {
-            logger->info("Proxy accepted greeting without authentication");
-	    }
-	    else
-	    {
-            logger->error("Proxy greeting failed");
-		    LogWSAError();
-		    break;
-	    }
+		if (send(sTun, greetProxy, sizeof(greetProxy), 0) != sizeof(greetProxy))
+		{
+			logger->error("Proxy greeting failed");
+			LogWSAError();
+			break;
+		}
 
-        //
-        // Prepare remote connect request
-        // 
-        char udpAssociate[10];
-        ZeroMemory(udpAssociate, ARRAYSIZE(udpAssociate));
-        udpAssociate[0] = 0x05; // Version (always 0x05)
-        udpAssociate[1] = 0x03; // UDP ASSOCIATE command
-        udpAssociate[2] = 0x00; // Reserved
-        udpAssociate[3] = 0x01; // Type (IP V4 address)
-    	//
-    	// TODO: this doesn't really matter, as Shadowsocks uses
-    	// the encapsulated UDP header to determine the real
-    	// remote endpoint to use.
-    	// 
-        udpAssociate[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
-        udpAssociate[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
-        udpAssociate[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
-        udpAssociate[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
-        udpAssociate[8] = (dest->sin_port >> 0) & 0xFF;
-        udpAssociate[9] = (dest->sin_port >> 8) & 0xFF;
+		char response[2] = {0};
 
-        logger->info("Sending UDP ASSOCIATE to proxy");
+		if (recv(sTun, response, sizeof(response), 0)
+			&& response[0] == 0x05 /* expected version */
+			&& response[1] == 0x00 /* success value */)
+		{
+			logger->info("Proxy accepted greeting without authentication");
+		}
+		else
+		{
+			logger->error("Proxy greeting failed");
+			LogWSAError();
+			break;
+		}
 
-    	//
-    	// Request UDP relay endpoint
-    	// 
-        if (send(sTun, udpAssociate, sizeof(udpAssociate), 0) != sizeof(udpAssociate))
-        {
-            logger->error("UDP ASSOCIATE failed");
-            LogWSAError();
-            break;
-        }
+		//
+		// Prepare remote connect request
+		// 
+		char udpAssociate[10];
+		ZeroMemory(udpAssociate, ARRAYSIZE(udpAssociate));
+		udpAssociate[0] = 0x05; // Version (always 0x05)
+		udpAssociate[1] = 0x03; // UDP ASSOCIATE command
+		udpAssociate[2] = 0x00; // Reserved
+		udpAssociate[3] = 0x01; // Type (IP V4 address)
+		//
+		// TODO: this doesn't really matter, as Shadowsocks uses
+		// the encapsulated UDP header to determine the real
+		// remote endpoint to use.
+		// 
+		udpAssociate[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
+		udpAssociate[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
+		udpAssociate[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
+		udpAssociate[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
+		udpAssociate[8] = (dest->sin_port >> 0) & 0xFF;
+		udpAssociate[9] = (dest->sin_port >> 8) & 0xFF;
 
-        char udpAssociateResp[10] = { 0 };
+		logger->info("Sending UDP ASSOCIATE to proxy");
 
-    	//
-    	// Parse response, contains endpoint
-    	// 
-        if (recv(sTun, udpAssociateResp, sizeof(udpAssociateResp), 0)
-            && response[1] == 0x00 /* success value */)
-        {
-        	//
-        	// This is the endpoint the UDP relay is listening on
-        	// 
-            SOCKADDR_IN udpEndpoint;
-            udpEndpoint.sin_addr.s_addr = (
-                udpAssociateResp[4] << 0 | 
-                udpAssociateResp[5] << 8 | 
-                udpAssociateResp[6] << 16 | 
-                udpAssociateResp[7] << 24
-                );
-            udpEndpoint.sin_port = (udpAssociateResp[8] << 0 | udpAssociateResp[9] << 8);
-            udpEndpoint.sin_family = dest->sin_family;
-        	
-            char address[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &(udpEndpoint.sin_addr), address, INET_ADDRSTRLEN);
-            const auto dest_port = ntohs(udpEndpoint.sin_port);
+		//
+		// Request UDP relay endpoint
+		// 
+		if (send(sTun, udpAssociate, sizeof(udpAssociate), 0) != sizeof(udpAssociate))
+		{
+			logger->error("UDP ASSOCIATE failed");
+			LogWSAError();
+			break;
+		}
 
-            logger->info("Received UDP relay endpoint {}:{} for socket {}",
-                address, dest_port, s);
+		char udpAssociateResp[10] = {0};
 
-            //
-	        // Keep track to start forwarding in my_WSASendTo
-	        // 
-            g_UdpRoutingMap.insert(std::pair<SOCKET, SOCKADDR_IN>(s, udpEndpoint));
-        }
-        else
-        {
-            logger->error("UDP ASSOCIATE response failed");
-            LogWSAError();
-            break;
-        }
-    }
-    while (FALSE);
+		//
+		// Parse response, contains endpoint
+		// 
+		if (recv(sTun, udpAssociateResp, sizeof(udpAssociateResp), 0)
+			&& response[1] == 0x00 /* success value */)
+		{
+			//
+			// This is the endpoint the UDP relay is listening on
+			// 
+			SOCKADDR_IN udpEndpoint;
+			udpEndpoint.sin_addr.s_addr = (
+				udpAssociateResp[4] << 0 |
+				udpAssociateResp[5] << 8 |
+				udpAssociateResp[6] << 16 |
+				udpAssociateResp[7] << 24
+			);
+			udpEndpoint.sin_port = (udpAssociateResp[8] << 0 | udpAssociateResp[9] << 8);
+			udpEndpoint.sin_family = dest->sin_family;
+
+			char address[INET_ADDRSTRLEN];
+			inet_ntop(AF_INET, &(udpEndpoint.sin_addr), address, INET_ADDRSTRLEN);
+			const auto dest_port = ntohs(udpEndpoint.sin_port);
+
+			logger->info("Received UDP relay endpoint {}:{} for socket {}",
+			             address, dest_port, s);
+
+			//
+			// Keep track to start forwarding in my_WSASendTo
+			// 
+			g_UdpRoutingMap.insert(std::pair<SOCKET, SOCKADDR_IN>(s, udpEndpoint));
+		}
+		else
+		{
+			logger->error("UDP ASSOCIATE response failed");
+			LogWSAError();
+			break;
+		}
+	}
+	while (FALSE);
 
 	//
 	// Not required anymore after we got the new endpoint
 	// 
-    if (sTun != INVALID_SOCKET)
-	    real_closesocket(sTun);
-	
-    return real_bind(s, addr, namelen);
+	if (sTun != INVALID_SOCKET)
+		real_closesocket(sTun);
+
+	return real_bind(s, addr, namelen);
 }
 
 //
 // Intercepts https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/socket/udp_socket_win.cc#837
 // 
 int WINAPI my_WSASendTo(
-    SOCKET                             s,
-    LPWSABUF                           lpBuffers,
-    DWORD                              dwBufferCount,
-    LPDWORD                            lpNumberOfBytesSent,
-    DWORD                              dwFlags,
-    const sockaddr* lpTo,
-    int                                iTolen,
-    LPWSAOVERLAPPED                    lpOverlapped,
-    LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
+	SOCKET s,
+	LPWSABUF lpBuffers,
+	DWORD dwBufferCount,
+	LPDWORD lpNumberOfBytesSent,
+	DWORD dwFlags,
+	const sockaddr* lpTo,
+	int iTolen,
+	LPWSAOVERLAPPED lpOverlapped,
+	LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
 )
 {
-    auto logger = spdlog::get("socksifier")->clone("socksifier.udp.WSASendTo");
+	auto logger = spdlog::get("socksifier")->clone("socksifier.udp.WSASendTo");
 
-    PSOCKADDR_IN dest = (PSOCKADDR_IN)lpTo;
-	
-    do
-    {
-	    //
-	    // TCP tunnel through SOCKS5 exists for this socket
-	    // 
-	    if (!g_UdpRoutingMap.count(s))
-		    break;
+	PSOCKADDR_IN dest = (PSOCKADDR_IN)lpTo;
 
-	    PSOCKADDR_IN sTun = &g_UdpRoutingMap[s];
-	    WSABUF destBuffer;
-        DWORD num;
+	do
+	{
+		//
+		// TCP tunnel through SOCKS5 exists for this socket
+		// 
+		if (!g_UdpRoutingMap.count(s))
+			break;
 
-    	//
-    	// Allocate new buffer with enough space for additional origin header
-    	// 
-	    destBuffer.len = lpBuffers->len + 10;
-	    destBuffer.buf = static_cast<PCHAR>(malloc(destBuffer.len));
+		PSOCKADDR_IN sTun = &g_UdpRoutingMap[s];
+		WSABUF destBuffer;
+		DWORD num;
 
-	    if (destBuffer.buf == nullptr)
-		    break;
+		//
+		// Allocate new buffer with enough space for additional origin header
+		// 
+		destBuffer.len = lpBuffers->len + 10;
+		destBuffer.buf = static_cast<PCHAR>(malloc(destBuffer.len));
 
-	    ZeroMemory(destBuffer.buf, destBuffer.len);
+		if (destBuffer.buf == nullptr)
+			break;
 
-	    destBuffer.buf[3] = 0x01; // IP V4 address
-	    destBuffer.buf[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
-	    destBuffer.buf[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
-	    destBuffer.buf[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
-	    destBuffer.buf[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
-	    destBuffer.buf[8] = (dest->sin_port >> 0) & 0xFF;
-	    destBuffer.buf[9] = (dest->sin_port >> 8) & 0xFF;
+		ZeroMemory(destBuffer.buf, destBuffer.len);
 
-	    memcpy(&destBuffer.buf[10], lpBuffers->buf, lpBuffers->len);
+		destBuffer.buf[3] = 0x01; // IP V4 address
+		destBuffer.buf[4] = (dest->sin_addr.s_addr >> 0) & 0xFF;
+		destBuffer.buf[5] = (dest->sin_addr.s_addr >> 8) & 0xFF;
+		destBuffer.buf[6] = (dest->sin_addr.s_addr >> 16) & 0xFF;
+		destBuffer.buf[7] = (dest->sin_addr.s_addr >> 24) & 0xFF;
+		destBuffer.buf[8] = (dest->sin_port >> 0) & 0xFF;
+		destBuffer.buf[9] = (dest->sin_port >> 8) & 0xFF;
 
-        char originAddr[INET_ADDRSTRLEN], relayAddr[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &(dest->sin_addr), originAddr, INET_ADDRSTRLEN);
-        inet_ntop(AF_INET, &(sTun->sin_addr), relayAddr, INET_ADDRSTRLEN);
-    	
-        logger->debug("Relaying UDP packet for {}:{} to {}:{}",
-            originAddr, ntohs(dest->sin_port), relayAddr, ntohs(sTun->sin_port));
-    	
-	    const auto ret = real_WSASendTo(
-		    s,
-		    &destBuffer,
-		    1,
-		    &num,
-		    0,
-		    reinterpret_cast<const PSOCKADDR>(sTun),
-		    sizeof(*sTun),
-		    lpOverlapped,
-		    lpCompletionRoutine
-	    );
+		memcpy(&destBuffer.buf[10], lpBuffers->buf, lpBuffers->len);
 
-        free(destBuffer.buf);
-        return ret;
-    }
-    while (FALSE);    
+		char originAddr[INET_ADDRSTRLEN], relayAddr[INET_ADDRSTRLEN];
+		inet_ntop(AF_INET, &(dest->sin_addr), originAddr, INET_ADDRSTRLEN);
+		inet_ntop(AF_INET, &(sTun->sin_addr), relayAddr, INET_ADDRSTRLEN);
 
-    char addr[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
-    const auto dest_port = ntohs(dest->sin_port);
+		logger->debug("Relaying UDP packet for {}:{} to {}:{}",
+		              originAddr, ntohs(dest->sin_port), relayAddr, ntohs(sTun->sin_port));
+
+		const auto ret = real_WSASendTo(
+			s,
+			&destBuffer,
+			1,
+			&num,
+			0,
+			reinterpret_cast<const PSOCKADDR>(sTun),
+			sizeof(*sTun),
+			lpOverlapped,
+			lpCompletionRoutine
+		);
+
+		free(destBuffer.buf);
+		return ret;
+	}
+	while (FALSE);
+
+	char addr[INET_ADDRSTRLEN];
+	inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
+	const auto dest_port = ntohs(dest->sin_port);
 
 	logger->debug("Sending packet to origin {}:{}", addr, dest_port);
-    
-    return real_WSASendTo(
-        s,
-        lpBuffers,
-        dwBufferCount,
-        lpNumberOfBytesSent,
-        dwFlags,
-        lpTo, 
-        iTolen,
-        lpOverlapped,
-        lpCompletionRoutine
-    );
+
+	return real_WSASendTo(
+		s,
+		lpBuffers,
+		dwBufferCount,
+		lpNumberOfBytesSent,
+		dwFlags,
+		lpTo,
+		iTolen,
+		lpOverlapped,
+		lpCompletionRoutine
+	);
 }
 
 //
 // Intercepts https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/socket/udp_socket_win.cc#778
 // 
 int WINAPI my_WSARecvFrom(
-    SOCKET                             s,
-    LPWSABUF                           lpBuffers,
-    DWORD                              dwBufferCount,
-    LPDWORD                            lpNumberOfBytesRecvd,
-    LPDWORD                            lpFlags,
-    sockaddr* lpFrom,
-    LPINT                              lpFromlen,
-    LPWSAOVERLAPPED                    lpOverlapped,
-    LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
+	SOCKET s,
+	LPWSABUF lpBuffers,
+	DWORD dwBufferCount,
+	LPDWORD lpNumberOfBytesRecvd,
+	LPDWORD lpFlags,
+	sockaddr* lpFrom,
+	LPINT lpFromlen,
+	LPWSAOVERLAPPED lpOverlapped,
+	LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
 )
 {
-    auto logger = spdlog::get("socksifier")->clone("socksifier.udp.WSARecvFrom");
+	auto logger = spdlog::get("socksifier")->clone("socksifier.udp.WSARecvFrom");
 
-    const struct sockaddr_in* dest = (const struct sockaddr_in*)lpFrom;
+	const struct sockaddr_in* dest = (const struct sockaddr_in*)lpFrom;
 
-    char addr[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
-    const auto dest_port = ntohs(dest->sin_port);
+	char addr[INET_ADDRSTRLEN];
+	inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
+	const auto dest_port = ntohs(dest->sin_port);
 
-    logger->debug("Received UDP packet from {}:{}", addr, dest_port);
+	logger->debug("Received UDP packet from {}:{}", addr, dest_port);
 
 	//
 	// TODO: better error checking, works with CEF (as of now)
 	// 
-    const auto ret = real_WSARecvFrom(
-        s,
-        lpBuffers,
-        dwBufferCount,
-        lpNumberOfBytesRecvd,
-        lpFlags,
-        lpFrom,
-        lpFromlen,
-        lpOverlapped,
-        lpCompletionRoutine
-    );
-    
-    do
-    {
-        if (!g_UdpRoutingMap.count(s))
-            break;
-                
-        logger->debug("Relayed socket, stripping UDP header");
+	const auto ret = real_WSARecvFrom(
+		s,
+		lpBuffers,
+		dwBufferCount,
+		lpNumberOfBytesRecvd,
+		lpFlags,
+		lpFrom,
+		lpFromlen,
+		lpOverlapped,
+		lpCompletionRoutine
+	);
+
+	do
+	{
+		if (!g_UdpRoutingMap.count(s))
+			break;
+
+		logger->debug("Relayed socket, stripping UDP header");
 
 #ifdef _DBG
         const std::vector<char> aBuffer(lpBuffers->buf, lpBuffers->buf + *lpNumberOfBytesRecvd);
@@ -784,10 +785,26 @@ int WINAPI my_WSARecvFrom(
         );
 #endif
 
-    	//
-    	// Skip the UDP encapsulation header and adjust packet size
-    	// 
-        memmove(lpBuffers->buf, &lpBuffers->buf[10], *lpNumberOfBytesRecvd -= 10);
+		SOCKADDR_IN originEndpoint;
+		originEndpoint.sin_addr.s_addr = (
+			lpBuffers->buf[4] << 0 |
+			lpBuffers->buf[5] << 8 |
+			lpBuffers->buf[6] << 16 |
+			lpBuffers->buf[7] << 24
+		);
+		originEndpoint.sin_port = (lpBuffers->buf[8] << 0 | lpBuffers->buf[9] << 8);
+
+		char originAddress[INET_ADDRSTRLEN];
+		inet_ntop(AF_INET, &(originEndpoint.sin_addr), originAddress, INET_ADDRSTRLEN);
+		const auto originPort = ntohs(originEndpoint.sin_port);
+
+		logger->debug("Received UDP packet from origin endpoint {}:{}",
+		             originAddress, originPort);
+
+		//
+		// Skip the UDP encapsulation header and adjust packet size
+		// 
+		memmove(lpBuffers->buf, &lpBuffers->buf[10], *lpNumberOfBytesRecvd -= 10);
 
 #ifdef _DBG
         const std::vector<char> bBuffer(lpBuffers->buf, lpBuffers->buf + *lpNumberOfBytesRecvd);
@@ -796,10 +813,10 @@ int WINAPI my_WSARecvFrom(
             spdlog::to_hex(bBuffer)
         );
 #endif
-    	
-    } while (FALSE);
+	}
+	while (FALSE);
 
-    return ret;
+	return ret;
 }
 
 //
@@ -897,10 +914,10 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 {
 	UNREFERENCED_PARAMETER(Params);
 
-    auto logger = spdlog::get("socksifier")->clone("socksifier.SocketEnumMainThread");
+	auto logger = spdlog::get("socksifier")->clone("socksifier.SocketEnumMainThread");
 	auto pid = GetCurrentProcessId();
 
-    logger->info("Attempting to reap open TCP connections for PID {}", pid);
+	logger->info("Attempting to reap open TCP connections for PID {}", pid);
 
 	WSAPROTOCOL_INFOW wsaProtocolInfo = {0};
 
@@ -911,7 +928,7 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 
 	if (pNTQSI == nullptr)
 	{
-        logger->error("Failed to acquire NtQuerySystemInformation API");
+		logger->error("Failed to acquire NtQuerySystemInformation API");
 		return 1;
 	}
 
@@ -941,7 +958,7 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 
 	if (ntReturn != STATUS_SUCCESS)
 	{
-        logger->error("NtQuerySystemInformation failed with status {}", ntReturn);
+		logger->error("NtQuerySystemInformation failed with status {}", ntReturn);
 		return 1;
 	}
 
@@ -973,16 +990,16 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 		// 
 		if (wcscmp(objectName, L"\\Device\\Afd") != 0)
 		{
-            delete objectName;
+			delete objectName;
 			continue;
 		}
 
-        delete objectName;
-		
-        logger->info("Found open socket, identifying");
+		delete objectName;
 
-        int optType = -1;
-        int optLen = sizeof(int);
+		logger->info("Found open socket, identifying");
+
+		int optType = -1;
+		int optLen = sizeof(int);
 
 		//
 		// We need to know the socket type; don't terminate UDP
@@ -994,14 +1011,14 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 				reinterpret_cast<PCHAR>(&optType), &optLen) != 0
 		)
 		{
-            logger->warn("Failed to get socket type, moving on");
+			logger->warn("Failed to get socket type, moving on");
 			LogWSAError();
 			continue;
 		}
 
 		if (optType == SOCK_DGRAM)
 		{
-            logger->info("Handle belongs to UDP socket, skipping");
+			logger->info("Handle belongs to UDP socket, skipping");
 			continue;
 		}
 
@@ -1022,7 +1039,7 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 			if (WSAGetLastError() == WSAENOTSOCK)
 				continue;
 
-            logger->warn("Couldn't duplicate, moving on");
+			logger->warn("Couldn't duplicate, moving on");
 			LogWSAError(); // For diagnostics, ignore otherwise
 			continue;
 		}
@@ -1053,7 +1070,7 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 				ZeroMemory(addr, ARRAYSIZE(addr));
 				inet_ntop(AF_INET, &(sockaddr.sin_addr), addr, INET_ADDRSTRLEN);
 
-                logger->info("Duplicated socket {}, closing", addr);
+				logger->info("Duplicated socket {}, closing", addr);
 
 				//
 				// Close duplicate
@@ -1092,11 +1109,11 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 			// Observe best with https://github.com/CobaltFusion/DebugViewPP
 			// 
 			auto sink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
-			sink->set_level(spdlog::level::info);
+			sink->set_level(spdlog::level::debug);
 
 			auto logger = std::make_shared<spdlog::logger>("socksifier", sink);
 
-			spdlog::set_level(spdlog::level::info);
+			logger->set_level(spdlog::level::debug);
 			logger->flush_on(spdlog::level::info);
 
 			set_default_logger(logger);
@@ -1125,10 +1142,10 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 		DetourTransactionBegin();
 		DetourUpdateThread(GetCurrentThread());
 		DetourAttach(&static_cast<PVOID>(real_connect), my_connect);
-        DetourAttach(&static_cast<PVOID>(real_bind), my_bind);
-        DetourAttach(&static_cast<PVOID>(real_WSASendTo), my_WSASendTo);
-        DetourAttach(&static_cast<PVOID>(real_WSARecvFrom), my_WSARecvFrom);
-        DetourAttach(&static_cast<PVOID>(real_closesocket), my_closesocket);
+		DetourAttach(&static_cast<PVOID>(real_bind), my_bind);
+		DetourAttach(&static_cast<PVOID>(real_WSASendTo), my_WSASendTo);
+		DetourAttach(&static_cast<PVOID>(real_WSARecvFrom), my_WSARecvFrom);
+		DetourAttach(&static_cast<PVOID>(real_closesocket), my_closesocket);
 		DetourTransactionCommit();
 
 		//
@@ -1142,17 +1159,17 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 			0,
 			nullptr
 		);
-		
+
 		break;
 
 	case DLL_PROCESS_DETACH:
 		DetourTransactionBegin();
 		DetourUpdateThread(GetCurrentThread());
 		DetourDetach(&static_cast<PVOID>(real_connect), my_connect);
-        DetourDetach(&static_cast<PVOID>(real_bind), my_bind);
-        DetourDetach(&static_cast<PVOID>(real_WSASendTo), my_WSASendTo);
-        DetourDetach(&static_cast<PVOID>(real_WSARecvFrom), my_WSARecvFrom);
-        DetourDetach(&static_cast<PVOID>(real_closesocket), my_closesocket);
+		DetourDetach(&static_cast<PVOID>(real_bind), my_bind);
+		DetourDetach(&static_cast<PVOID>(real_WSASendTo), my_WSASendTo);
+		DetourDetach(&static_cast<PVOID>(real_WSARecvFrom), my_WSARecvFrom);
+		DetourDetach(&static_cast<PVOID>(real_closesocket), my_closesocket);
 		DetourTransactionCommit();
 		break;
 	}
