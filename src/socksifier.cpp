@@ -358,7 +358,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr* name, int namelen)
 		sizeof(proxy)
 	))
 	{
-		logger->info("Proxy connection established");
+		logger->debug("Proxy connection established");
 	}
 	else
 	{
@@ -375,7 +375,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr* name, int namelen)
 	greetProxy[1] = 0x01; // Number of authentication methods
 	greetProxy[2] = 0x00; // NO AUTHENTICATION REQUIRED
 
-	logger->info("Sending greeting to proxy");
+	logger->debug("Sending greeting to proxy");
 
 	if (WSASendSync(s, greetProxy, sizeof(greetProxy)))
 	{
@@ -385,7 +385,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr* name, int namelen)
 			&& response[0] == 0x05 /* expected version */
 			&& response[1] == 0x00 /* success value */)
 		{
-			logger->info("Proxy accepted greeting without authentication");
+			logger->debug("Proxy accepted greeting without authentication");
 		}
 		else
 		{
@@ -416,7 +416,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr* name, int namelen)
 	remoteBind[8] = (dest->sin_port >> 0) & 0xFF;
 	remoteBind[9] = (dest->sin_port >> 8) & 0xFF;
 
-	logger->info("Sending connect request to proxy");
+	logger->debug("Sending connect request to proxy");
 
 	if (WSASendSync(s, remoteBind, sizeof(remoteBind)))
 	{
@@ -444,6 +444,9 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr* name, int namelen)
 	return ERROR_SUCCESS;
 }
 
+//
+// Hooks https://docs.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-bind
+// 
 int WINAPI my_bind(
 	SOCKET s,
 	const sockaddr* addr,
@@ -527,7 +530,7 @@ int WINAPI my_bind(
 		greetProxy[1] = 0x01; // Number of authentication methods
 		greetProxy[2] = 0x00; // NO AUTHENTICATION REQUIRED
 
-		logger->info("Sending greeting to proxy");
+		logger->debug("Sending greeting to proxy");
 
 		if (send(sTun, greetProxy, sizeof(greetProxy), 0) != sizeof(greetProxy))
 		{
@@ -542,7 +545,7 @@ int WINAPI my_bind(
 			&& response[0] == 0x05 /* expected version */
 			&& response[1] == 0x00 /* success value */)
 		{
-			logger->info("Proxy accepted greeting without authentication");
+			logger->debug("Proxy accepted greeting without authentication");
 		}
 		else
 		{
@@ -572,7 +575,7 @@ int WINAPI my_bind(
 		udpAssociate[8] = (dest->sin_port >> 0) & 0xFF;
 		udpAssociate[9] = (dest->sin_port >> 8) & 0xFF;
 
-		logger->info("Sending UDP ASSOCIATE to proxy");
+		logger->debug("Sending UDP ASSOCIATE to proxy");
 
 		//
 		// Request UDP relay endpoint
@@ -1172,6 +1175,9 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 		break;
 
 	case DLL_PROCESS_DETACH:
+
+		spdlog::info("Detaching from process with PID {}", GetCurrentProcessId());
+
 		DetourTransactionBegin();
 		DetourUpdateThread(GetCurrentThread());
 		DetourDetach(&static_cast<PVOID>(real_connect), my_connect);
