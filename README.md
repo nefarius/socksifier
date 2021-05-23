@@ -1,6 +1,6 @@
 # Socksifier
 
-A Windows DLL which hooks the `connect()` API to redirect sockets to a SOCKS5 proxy server.
+A Windows DLL which hooks low-level [Winsock 2](https://docs.microsoft.com/en-us/windows/win32/winsock/windows-sockets-start-page-2) APIs to redirect sockets to a SOCKS5 proxy server.
 
 [![Build status](https://ci.appveyor.com/api/projects/status/bwesvx70s524t30w/branch/master?svg=true)](https://ci.appveyor.com/project/nefarius/socksifier/branch/master) [![GitHub All Releases](https://img.shields.io/github/downloads/Nefarius/Socksifier/total)](https://somsubhra.github.io/github-release-stats/?username=Nefarius&repository=Socksifier)
 
@@ -10,15 +10,17 @@ Over time less and less modern network-enabled applications offer the user with 
 
 ## How it works
 
-Socksifier is a self-contained DLL with no external dependencies (except the APIs shipped with Windows) that is meant to [get loaded into the process](https://web.archive.org/web/20131012071541/http://blog.opensecurityresearch.com/2013/01/windows-dll-injection-basics.html) who's connections should get "proxified" and achieves this by [API-hooking](https://www.codeproject.com/Articles/2082/API-hooking-revealed) the low-level `connect()` socket function. API-hooking is performed upon library load using the well-known and battle-tested [Microsoft Detours](https://github.com/Microsoft/Detours) library.
+Socksifier is a self-contained DLL with no external dependencies (except the APIs shipped with Windows) that is meant to [get loaded into the process](https://web.archive.org/web/20131012071541/http://blog.opensecurityresearch.com/2013/01/windows-dll-injection-basics.html) who's connections should get "proxified" and achieves this by [API-hooking](https://www.codeproject.com/Articles/2082/API-hooking-revealed) the low-level [`connect`](https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-connect), [`bind`](https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind), [`WSASendTo`](https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-wsasendto), [`WSARecvFrom`](https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-wsarecvfrom) and [`closesocket`](https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-closesocket) functions. API-hooking is performed upon library load using the well-known and battle-tested [Microsoft Detours](https://github.com/Microsoft/Detours) library.
 
-After the hook is established, the process's existing connection handles get enumerated and terminated, forcing the network layer of the application to re-establish them, but now calling the hooked `connect`-variant instead.
+After the hook is established, the process's existing connection handles get enumerated and terminated, forcing the network layer of the application to re-establish them, but now calling the hooked API-variant instead.
 
-The detoured function contains the logic necessary to re-route the to-be-established socket connection to a SOCKS5 proxy by performing the necessary protocol-specific handshake and upon success simply returns the socket back to the callee, which is now transparently talking to the proxy instead of the origin destination (e.g. HTTP(S) or WebSocket connection).
+The detoured functions contain the logic necessary to re-route the to-be-established socket connection to a SOCKS5 proxy by performing the necessary protocol-specific handshake and upon success simply returns the socket back to the callee, which is now transparently talking to the proxy instead of the origin destination (e.g. HTTP(S) or WebSocket connection).
 
 ## Limitations
 
-This fork has been designed for and tested with [Electron](https://www.electronjs.org/)-based applications and [Shadowsocks](https://shadowsocks.org/) as SOCKS5 proxy **only**. Other use-cases might work but are left to the reader to discover by experimentation.
+This fork has been designed for and tested with [Electron](https://www.electronjs.org/)-based applications and [Shadowsocks](https://shadowsocks.org/) as SOCKS5 proxy **only**. Rudimentary **UDP tunneling support** for [WebRTC](https://webrtc.org/) sessions is implemented, but should be considered experimental.
+
+Other use-cases might work but are left to the reader to discover by experimentation.
 
 ## Disclaimer
 
