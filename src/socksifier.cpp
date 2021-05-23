@@ -10,6 +10,7 @@
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/msvc_sink.h>
+#include <spdlog/fmt/bin_to_hex.h>
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -59,22 +60,6 @@ extern "C" {
         LPWSAOVERLAPPED                    lpOverlapped,
         LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
     ) = WSARecvFrom;
-	
-    static int (WINAPI * real_send)(
-        SOCKET     s,
-        const char* buf,
-        int        len,
-        int        flags
-    ) = send;
-	
-    static int (WINAPI * real_sendto)(
-        SOCKET         s,
-        const char* buf,
-        int            len,
-        int            flags,
-        const sockaddr* to,
-        int            tolen
-    ) = sendto;
 	
     LPFN_CONNECTEX ConnectExPtr = NULL;
 
@@ -293,7 +278,9 @@ static inline BOOL WSASendSync(
  */
 int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
 {
-    spdlog::debug("my_connect called");
+    auto logger = spdlog::get("socksifier")->clone("socksifier.connect");
+	
+    logger->debug("my_connect called");
 
     //
     // One-time initialization
@@ -301,7 +288,8 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     static std::once_flag flag;
     std::call_once(flag, [&sock = s]()
     {
-        spdlog::info("Requesting pointer to ConnectEx()");
+        auto logger = spdlog::get("socksifier")->clone("socksifier.connect");
+        logger->info("Requesting pointer to ConnectEx()");
 
         DWORD numBytes = 0;
         GUID guid = WSAID_CONNECTEX;
@@ -323,11 +311,11 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
 
         if (!ret)
         {
-            spdlog::info("ConnectEx() pointer acquired");
+            logger->info("ConnectEx() pointer acquired");
         }
         else
         {
-            spdlog::error("Failed to retrieve ConnectEx() pointer, error: {}", WSAGetLastError());
+            logger->error("Failed to retrieve ConnectEx() pointer, error: {}", WSAGetLastError());
             ConnectExPtr = NULL;
         }
     });
@@ -346,7 +334,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
         return real_connect(s, name, namelen);
     }
 
-    spdlog::info("Original connect destination: {}:{}", addr, dest_port);
+    logger->info("Original connect destination: {}:{}", addr, dest_port);
 
     struct sockaddr_in proxy;
     proxy.sin_addr.s_addr = settings.proxy_address;
@@ -354,7 +342,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     proxy.sin_port = settings.proxy_port;
 
     inet_ntop(AF_INET, &(proxy.sin_addr), addr, INET_ADDRSTRLEN);
-    spdlog::info("Connecting to SOCKS proxy: {}:{}", addr, ntohs(proxy.sin_port));
+    logger->info("Connecting to SOCKS proxy: {}:{}", addr, ntohs(proxy.sin_port));
 
     //
     // This handles non-blocking socket connections via extended Winsock API
@@ -365,11 +353,11 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
         sizeof(proxy)
     ))
     {
-        spdlog::info("Proxy connection established");
+        logger->info("Proxy connection established");
     }
     else
     {
-        spdlog::error("Proxy connection failed");
+        logger->error("Proxy connection failed");
         LogWSAError();
         return SOCKET_ERROR;
     }
@@ -382,7 +370,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     greetProxy[1] = 0x01; // Number of authentication methods
     greetProxy[2] = 0x00; // NO AUTHENTICATION REQUIRED
 
-    spdlog::info("Sending greeting to proxy");
+    logger->info("Sending greeting to proxy");
 
     if (WSASendSync(s, greetProxy, sizeof(greetProxy)))
     {
@@ -392,18 +380,18 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
             && response[0] == 0x05 /* expected version */
             && response[1] == 0x00 /* success value */)
         {
-            spdlog::info("Proxy accepted greeting without authentication");
+            logger->info("Proxy accepted greeting without authentication");
         }
         else
         {
-            spdlog::error("Proxy greeting failed");
+            logger->error("Proxy greeting failed");
             LogWSAError();
             return SOCKET_ERROR;
         }
     }
     else
     {
-        spdlog::error("Failed to greet SOCKS proxy server");
+        logger->error("Failed to greet SOCKS proxy server");
         LogWSAError();
         return SOCKET_ERROR;
     }
@@ -423,7 +411,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
     remoteBind[8] = (dest->sin_port >> 0) & 0xFF;
     remoteBind[9] = (dest->sin_port >> 8) & 0xFF;
 
-    spdlog::info("Sending connect request to proxy");
+    logger->info("Sending connect request to proxy");
 
     if (WSASendSync(s, remoteBind, sizeof(remoteBind)))
     {
@@ -432,18 +420,18 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr * name, int namelen)
         if (WSARecvSync(s, response, sizeof(response))
             && response[1] == 0x00 /* success value */)
         {
-            spdlog::info("Remote connection established");
+            logger->info("Remote connection established");
         }
         else
         {
-            spdlog::error("Consuming proxy response failed");
+            logger->error("Consuming proxy response failed");
             LogWSAError();
             return SOCKET_ERROR;
         }
     }
     else
     {
-        spdlog::error("Failed to instruct proxy to remote connect");
+        logger->error("Failed to instruct proxy to remote connect");
         LogWSAError();
         return SOCKET_ERROR;
     }
@@ -457,7 +445,9 @@ int WINAPI my_bind(
     int            namelen
 )
 {
-    spdlog::info("my_bind called ({})", s);
+    auto logger = spdlog::get("socksifier")->clone("socksifier.bind");
+	
+    logger->debug("my_bind called ({})", s);
 
     int optType = -1;
     int optLen = sizeof(int);
@@ -470,22 +460,13 @@ int WINAPI my_bind(
         
     const struct sockaddr_in* dest = (const struct sockaddr_in*)addr;
 
-    //char address[INET_ADDRSTRLEN];
-    //inet_ntop(AF_INET, &(dest->sin_addr), address, INET_ADDRSTRLEN);
-    //const auto dest_port = ntohs(dest->sin_port);
-
-    //if (optType == SOCK_DGRAM)
-    //    spdlog::info("Binding UDP socket to {}:{}", addr, dest_port);
-    //else
-    //    spdlog::info("Binding TCP socket to {}:{}", addr, dest_port);
-
 	//
 	// Not of interest to intercept
 	// 
     if (optType != SOCK_DGRAM || g_UdpRoutingMap.count(s))
 	    return real_bind(s, addr, namelen);
 
-    spdlog::info("Binding UDP socket, tracking socket handle");
+    logger->info("Binding UDP socket, tracking socket handle");
 
     SOCKET sTun = INVALID_SOCKET;
 	
@@ -499,7 +480,7 @@ int WINAPI my_bind(
 
 	    if (sTun == INVALID_SOCKET)
 	    {
-            spdlog::error("socket failed: {}", WSAGetLastError());
+            logger->error("socket failed: {}", WSAGetLastError());
             LogWSAError();
 		    break;
 	    }
@@ -514,7 +495,7 @@ int WINAPI my_bind(
     	
         if (rc != 0) 
         {
-            spdlog::error("bind failed: {}", WSAGetLastError());
+            logger->error("bind failed: {}", WSAGetLastError());
             LogWSAError();
             break;
         }
@@ -528,7 +509,7 @@ int WINAPI my_bind(
 
         if (rc != 0)
         {
-            spdlog::error("connect failed: {}", WSAGetLastError());
+            logger->error("connect failed: {}", WSAGetLastError());
             LogWSAError();
             break;
         }
@@ -541,11 +522,11 @@ int WINAPI my_bind(
 	    greetProxy[1] = 0x01; // Number of authentication methods
 	    greetProxy[2] = 0x00; // NO AUTHENTICATION REQUIRED
 
-	    spdlog::info("[UDP] Sending greeting to proxy");
+        logger->info("Sending greeting to proxy");
 
 	    if (send(sTun, greetProxy, sizeof(greetProxy), 0) != sizeof(greetProxy))
 	    {
-		    spdlog::error("[UDP] Proxy greeting failed");
+            logger->error("Proxy greeting failed");
 		    LogWSAError();
 		    break;
 	    }
@@ -556,11 +537,11 @@ int WINAPI my_bind(
 		    && response[0] == 0x05 /* expected version */
 		    && response[1] == 0x00 /* success value */)
 	    {
-		    spdlog::info("[UDP] Proxy accepted greeting without authentication");
+            logger->info("Proxy accepted greeting without authentication");
 	    }
 	    else
 	    {
-		    spdlog::error("[UDP] Proxy greeting failed");
+            logger->error("Proxy greeting failed");
 		    LogWSAError();
 		    break;
 	    }
@@ -569,6 +550,7 @@ int WINAPI my_bind(
         // Prepare remote connect request
         // 
         char udpAssociate[10];
+        ZeroMemory(udpAssociate, ARRAYSIZE(udpAssociate));
         udpAssociate[0] = 0x05; // Version (always 0x05)
         udpAssociate[1] = 0x03; // UDP ASSOCIATE command
         udpAssociate[2] = 0x00; // Reserved
@@ -585,14 +567,14 @@ int WINAPI my_bind(
         udpAssociate[8] = (dest->sin_port >> 0) & 0xFF;
         udpAssociate[9] = (dest->sin_port >> 8) & 0xFF;
 
-        spdlog::info("[UDP] Sending UDP ASSOCIATE to proxy");
+        logger->info("Sending UDP ASSOCIATE to proxy");
 
     	//
     	// Request UDP relay endpoint
     	// 
         if (send(sTun, udpAssociate, sizeof(udpAssociate), 0) != sizeof(udpAssociate))
         {
-            spdlog::error("[UDP] UDP ASSOCIATE failed");
+            logger->error("UDP ASSOCIATE failed");
             LogWSAError();
             break;
         }
@@ -622,7 +604,7 @@ int WINAPI my_bind(
             inet_ntop(AF_INET, &(udpEndpoint.sin_addr), address, INET_ADDRSTRLEN);
             const auto dest_port = ntohs(udpEndpoint.sin_port);
 
-            spdlog::info("[UDP] Received UDP relay endpoint {}:{} for socket {}", 
+            logger->info("Received UDP relay endpoint {}:{} for socket {}",
                 address, dest_port, s);
 
             //
@@ -632,7 +614,7 @@ int WINAPI my_bind(
         }
         else
         {
-            spdlog::error("[UDP] UDP ASSOCIATE response failed");
+            logger->error("UDP ASSOCIATE response failed");
             LogWSAError();
             break;
         }
@@ -663,10 +645,7 @@ int WINAPI my_WSASendTo(
     LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
 )
 {
-    if (lpOverlapped)
-        spdlog::info("my_WSASendTo called (OVERLAPPED) ({})", s);
-    else
-        spdlog::info("my_WSASendTo called");
+    auto logger = spdlog::get("socksifier")->clone("socksifier.udp.WSASendTo");
 
     PSOCKADDR_IN dest = (PSOCKADDR_IN)lpTo;
 	
@@ -703,12 +682,14 @@ int WINAPI my_WSASendTo(
 
 	    memcpy(&destBuffer.buf[10], lpBuffers->buf, lpBuffers->len);
 
-	    dest->sin_addr = sTun->sin_addr;
-	    dest->sin_port = sTun->sin_port;
-
-        spdlog::info("[UDP] Sending packet to UDP relay");
+        char originAddr[INET_ADDRSTRLEN], relayAddr[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(dest->sin_addr), originAddr, INET_ADDRSTRLEN);
+        inet_ntop(AF_INET, &(sTun->sin_addr), relayAddr, INET_ADDRSTRLEN);
     	
-	    return real_WSASendTo(
+        logger->debug("Relaying UDP packet for {}:{} to {}:{}",
+            originAddr, ntohs(dest->sin_port), relayAddr, ntohs(sTun->sin_port));
+    	
+	    const auto ret = real_WSASendTo(
 		    s,
 		    &destBuffer,
 		    1,
@@ -719,6 +700,9 @@ int WINAPI my_WSASendTo(
 		    lpOverlapped,
 		    lpCompletionRoutine
 	    );
+
+        free(destBuffer.buf);
+        return ret;
     }
     while (FALSE);    
 
@@ -726,7 +710,7 @@ int WINAPI my_WSASendTo(
     inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
     const auto dest_port = ntohs(dest->sin_port);
 
-	spdlog::info("[UDP] Sending packet to {}:{}", addr, dest_port);
+	logger->debug("Sending packet to origin {}:{}", addr, dest_port);
     
     return real_WSASendTo(
         s,
@@ -741,6 +725,9 @@ int WINAPI my_WSASendTo(
     );
 }
 
+//
+// Intercepts https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/socket/udp_socket_win.cc#778
+// 
 int WINAPI my_WSARecvFrom(
     SOCKET                             s,
     LPWSABUF                           lpBuffers,
@@ -753,10 +740,7 @@ int WINAPI my_WSARecvFrom(
     LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
 )
 {
-	if (lpOverlapped)
-		spdlog::debug("my_WSARecvFrom called (OVERLAPPED)");
-    else
-        spdlog::debug("my_WSARecvFrom called");
+    auto logger = spdlog::get("socksifier")->clone("socksifier.udp.WSARecvFrom");
 
     const struct sockaddr_in* dest = (const struct sockaddr_in*)lpFrom;
 
@@ -764,9 +748,9 @@ int WINAPI my_WSARecvFrom(
     inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
     const auto dest_port = ntohs(dest->sin_port);
 
-    spdlog::debug("Received UDP packet from {}:{}", addr, dest_port);
-	
-    return real_WSARecvFrom(
+    logger->debug("Received UDP packet from {}:{}", addr, dest_port);
+
+    const auto ret = real_WSARecvFrom(
         s,
         lpBuffers,
         dwBufferCount,
@@ -777,56 +761,35 @@ int WINAPI my_WSARecvFrom(
         lpOverlapped,
         lpCompletionRoutine
     );
-}
-
-int WINAPI my_send(
-    SOCKET     s,
-    const char* buf,
-    int        len,
-    int        flags
-)
-{
-    spdlog::info("my_send called");
-
-    int optType = -1;
-    int optLen = sizeof(int);
-
-    if (getsockopt(s, SOL_SOCKET, SO_TYPE, reinterpret_cast<PCHAR>(&optType), &optLen) == 0
-        && optType == SOCK_DGRAM)
-    {        
-        spdlog::info("Sending UDP packet");
-    }
-
-    return real_send(s, buf, len, flags);
-}
-
-int WINAPI my_sendto(
-    SOCKET         s,
-    const char* buf,
-    int            len,
-    int            flags,
-    const sockaddr* to,
-    int            tolen
-)
-{
-    int optType = -1;
-    int optLen = sizeof(int);
-
-    if (getsockopt(s, SOL_SOCKET, SO_TYPE, reinterpret_cast<PCHAR>(&optType), &optLen) == 0
-        && optType == SOCK_DGRAM)
+    
+    do
     {
-        const struct sockaddr_in* dest = (const struct sockaddr_in*)to;
+        if (!g_UdpRoutingMap.count(s))
+            break;
+                
+        logger->info("Relayed socket, stripping UDP header");
+
+#ifdef _DBG
+        const std::vector<char> aBuffer(lpBuffers->buf, lpBuffers->buf + *lpNumberOfBytesRecvd);
+        logger->debug("({:04d}) -> {:Xpn}",
+            *lpNumberOfBytesRecvd,
+            spdlog::to_hex(aBuffer)
+        );
+#endif
+        
+        memmove(lpBuffers->buf, &lpBuffers->buf[10], *lpNumberOfBytesRecvd -= 10);
+
+#ifdef _DBG
+        const std::vector<char> bBuffer(lpBuffers->buf, lpBuffers->buf + *lpNumberOfBytesRecvd);
+        logger->debug("({:04d}) -> {:Xpn}",
+            *lpNumberOfBytesRecvd,
+            spdlog::to_hex(bBuffer)
+        );
+#endif
     	
-        char addr[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &(dest->sin_addr), addr, INET_ADDRSTRLEN);
-        const auto dest_port = ntohs(dest->sin_port);
+    } while (FALSE);
 
-        spdlog::info("Sending UDP packet to {}:{}", addr, dest_port);
-    }
-
-    spdlog::info("real_sendto called");
-	
-    return real_sendto(s, buf, len, flags, to, tolen);
+    return ret;
 }
 
 
@@ -1075,12 +1038,12 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 			// Observe best with https://github.com/CobaltFusion/DebugViewPP
 			// 
 			auto sink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
-			sink->set_level(spdlog::level::debug);
+			sink->set_level(spdlog::level::info);
 
 			auto logger = std::make_shared<spdlog::logger>("socksifier", sink);
 
-			spdlog::set_level(spdlog::level::debug);
-			logger->flush_on(spdlog::level::debug);
+			spdlog::set_level(spdlog::level::info);
+			logger->flush_on(spdlog::level::info);
 
 			set_default_logger(logger);
 
