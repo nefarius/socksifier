@@ -53,9 +53,10 @@ BOOL BindAndConnectExSync(
 		addr.sin_addr.s_addr = INADDR_ANY; // Any
 		addr.sin_port = 0; // Any
 		auto rc = real_bind(s, (SOCKADDR*)&addr, sizeof(addr));
-		if (rc != 0)
+		const auto error = WSAGetLastError();
+		if (rc != 0 && error != WSAEINVAL /* socket might be already bound */)
 		{
-			spdlog::error("bind failed: {}", WSAGetLastError());
+			spdlog::error("bind failed: {}", error);
 			LogWSAError();
 			return FALSE;
 		}
