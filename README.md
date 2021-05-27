@@ -85,4 +85,4 @@ Observe the change in network connections with e.g. [NirSoft CurrPorts](https://
 - [SYSTEM_HANDLE_TABLE_ENTRY_INFO](https://www.geoffchappell.com/studies/windows/km/ntoskrnl/api/ex/sysinfo/handle_table_entry.htm?ts=0,115)
 - [Get Handle of Open Sockets of a Program](https://stackoverflow.com/q/16262114/490629)
 - [Why does SOCKS5 require to relay UDP over UDP?](https://stackoverflow.com/q/41967217/490629)
-- [SOCKS Protocol Version 5](https://datatracker.ietf.org/doc/html/rfc1928)
+- [shadowsocks-rust](https://github.com/shadowsocks/shadowsocks-rust)
