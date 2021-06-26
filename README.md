@@ -22,6 +22,8 @@ This fork has been designed for and tested with [Electron](https://www.electronj
 
 Other use-cases might work but are left to the reader to discover by experimentation.
 
+Currently **only IPv4** support is implemented.
+
 ## Disclaimer
 
 This project makes heavy use of code and mechanisms unfortunately widely (ab)used by malware (loading foreign code into processes, manipulating handles and network traffic flow), therefore might trigger anti-virus/anti-cheat solutions. Make sure to add an exclusion to your AV in case this becomes and issue and *refrain* from injecting into anti-cheat protected games as this *might* pose the risk of a false-positive ban. You have been warned ❤️
