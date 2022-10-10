@@ -56,7 +56,7 @@ BOOL BindAndConnectExSync(
 		const auto error = WSAGetLastError();
 		if (rc != 0 && error != WSAEINVAL /* socket might be already bound */)
 		{
-			spdlog::error("bind failed: {}", error);
+			spdlog::error("BindAndConnectExSync.bind failed: {}", error);
 			LogWSAError();
 			return FALSE;
 		}
@@ -75,7 +75,7 @@ BOOL BindAndConnectExSync(
 		&overlapped
 	) && WSAGetLastError() != WSA_IO_PENDING)
 	{
-		spdlog::error("ConnectEx failed: {}", WSAGetLastError());
+		spdlog::error("BindAndConnectExSync.ConnectEx failed: {}", WSAGetLastError());
 		CloseHandle(overlapped.hEvent);
 		return FALSE;
 	}
