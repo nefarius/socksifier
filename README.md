@@ -30,11 +30,13 @@ This project makes heavy use of code and mechanisms unfortunately widely (ab)use
 
 **The reader is highly encouraged to study the code and build the project by themselves** instead of trusting the provided binaries.
 
-## Build
+## How to build
 
-[Follow the Vcpkg Quick Start](https://github.com/Microsoft/vcpkg#quick-start) and install the following packages:
+- [Step 1: Install Visual Studio 2019](<https://docs.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk#download-icon-step-1-install-visual-studio-2019>)
+- [Step 2: Follow the Vcpkg Quick Start](<https://github.com/Microsoft/vcpkg#quick-start>) and install the following packages:
+  - `.\vcpkg install spdlog:x86-windows-static spdlog:x64-windows-static detours:x86-windows-static detours:x64-windows-static`
 
-- `.\vcpkg install spdlog:x86-windows-static spdlog:x64-windows-static detours:x86-windows-static detours:x64-windows-static`
+You can build individual projects of the solution within Visual Studio.
 
 ## Getting started
 
