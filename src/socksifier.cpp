@@ -64,7 +64,7 @@ LPFN_CONNECTEX ConnectExPtr = nullptr;
 // 
 int WINAPI my_connect(SOCKET s, const struct sockaddr* name, int namelen)
 {
-	auto logger = spdlog::get("socksifier")->clone("socksifier.connect");
+	const auto logger = spdlog::get("socksifier")->clone("socksifier.connect");
 
 	logger->debug("my_connect called");
 
@@ -74,7 +74,7 @@ int WINAPI my_connect(SOCKET s, const struct sockaddr* name, int namelen)
 	static std::once_flag flag;
 	std::call_once(flag, [&sock = s]()
 	{
-		auto logger = spdlog::get("socksifier")->clone("socksifier.connect");
+		const auto logger = spdlog::get("socksifier")->clone("socksifier.connect");
 		logger->info("Requesting pointer to ConnectEx()");
 
 		DWORD numBytes = 0;
@@ -234,7 +234,7 @@ int WINAPI my_bind(
 	int namelen
 )
 {
-	auto logger = spdlog::get("socksifier")->clone("socksifier.bind");
+	const auto logger = spdlog::get("socksifier")->clone("socksifier.bind");
 
 	logger->debug("my_bind called ({})", s);
 
@@ -529,7 +529,7 @@ int WINAPI my_WSARecvFrom(
 	LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
 )
 {
-	auto logger = spdlog::get("socksifier")->clone("socksifier.udp.WSARecvFrom");
+	const auto logger = spdlog::get("socksifier")->clone("socksifier.udp.WSARecvFrom");
 
 	const struct sockaddr_in* dest = (const struct sockaddr_in*)lpFrom;
 
@@ -610,7 +610,7 @@ int WINAPI my_closesocket(
 	SOCKET s
 )
 {
-	auto logger = spdlog::get("socksifier")->clone("socksifier.closesocket");
+	const auto logger = spdlog::get("socksifier")->clone("socksifier.closesocket");
 
 	logger->debug("my_closesocket called");
 
@@ -630,7 +630,7 @@ DWORD WINAPI SocketEnumMainThread(LPVOID Params)
 {
 	UNREFERENCED_PARAMETER(Params);
 
-	auto logger = spdlog::get("socksifier")->clone("socksifier.SocketEnumMainThread");
+	const auto logger = spdlog::get("socksifier")->clone("socksifier.SocketEnumMainThread");
 	auto pid = GetCurrentProcessId();
 
 	logger->info("Attempting to reap open TCP connections for PID {}", pid);
@@ -852,7 +852,7 @@ BOOL WINAPI DllMain(HINSTANCE dll_handle, DWORD reason, LPVOID reserved)
 			CHAR portVar[MAX_PATH] = "1080";
 
 			//
-			// Mandatory variables
+			// Optional variables
 			// 
 			GetEnvironmentVariableA("SOCKSIFIER_ADDRESS", addressVar, ARRAYSIZE(addressVar));
 			GetEnvironmentVariableA("SOCKSIFIER_PORT", portVar, ARRAYSIZE(portVar));
