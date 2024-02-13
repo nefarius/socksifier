@@ -387,3 +387,4 @@ FodyWeavers.xsd
 .idea/
 *.sln.iml
 /docs
+/src/vcpkg_installed

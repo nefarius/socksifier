@@ -1,0 +1,11 @@
+{
+  "name": "socksifier",
+  "version": "1.0.0",
+  "description": "socksifier",
+  "license": "MIT",
+  "supports": "!(arm | uwp)",
+  "dependencies": [
+    "spdlog",
+    "detours"
+  ]
+}
