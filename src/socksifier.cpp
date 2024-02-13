@@ -434,9 +434,9 @@ int WINAPI my_WSASendTo(
 	LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
 )
 {
-	auto logger = spdlog::get("socksifier")->clone("socksifier.udp.WSASendTo");
+	const auto logger = spdlog::get("socksifier")->clone("socksifier.udp.WSASendTo");
 
-	PSOCKADDR_IN dest = (PSOCKADDR_IN)lpTo;
+	const PSOCKADDR_IN dest = (PSOCKADDR_IN)lpTo;
 
 	do
 	{
@@ -446,7 +446,7 @@ int WINAPI my_WSASendTo(
 		if (!g_UdpRoutingMap.count(s))
 			break;
 
-		PSOCKADDR_IN sTun = &g_UdpRoutingMap[s];
+		const PSOCKADDR_IN sTun = &g_UdpRoutingMap[s];
 		WSABUF destBuffer;
 		DWORD num;
 
