@@ -65,7 +65,9 @@ Observe the change in network connections with e.g. [NirSoft CurrPorts](https://
 
 ![blk1DOYFW7.png](assets/blk1DOYFW7.png)
 
-## Sources
+## Sources & 3rd party credits
+
+This project benefits from these awesome projects and articles ❤ (appearance in no special order):
 
 - [Windows Sockets Error Codes](https://docs.microsoft.com/en-us/windows/win32/winsock/windows-sockets-error-codes-2)
 - [WSAEWOULDBLOCK error on non-blocking Connect()](https://stackoverflow.com/questions/14016579/wsaewouldblock-error-on-non-blocking-connect)
