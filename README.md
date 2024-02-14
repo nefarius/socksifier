@@ -18,7 +18,7 @@ The detoured functions contain the logic necessary to re-route the to-be-establi
 
 ## Limitations
 
-This fork has been designed for and tested with [Electron](https://www.electronjs.org/)-based applications and [Shadowsocks](https://shadowsocks.org/) as SOCKS5 proxy **only**. Rudimentary **UDP tunneling support** for [WebRTC](https://webrtc.org/) sessions is implemented, but should be considered experimental.
+This project has been designed for and tested with [Electron](https://www.electronjs.org/)-based applications and [Shadowsocks](https://shadowsocks.org/) as SOCKS5 proxy **only**. Rudimentary **UDP tunneling support** for [WebRTC](https://webrtc.org/) sessions is implemented, but should be considered experimental.
 
 Other use-cases might work but are left to the reader to discover by experimentation.
 
